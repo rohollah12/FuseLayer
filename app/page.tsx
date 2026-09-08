@@ -45,7 +45,7 @@ function failedWriteMessage(label: string, hash: string, receipt: unknown) {
     txExecutionResultName?: string;
   };
   const detail = [tx.statusName, tx.txExecutionResultName].filter(Boolean).join(' / ');
-  return `${label} finalized without the expected contract state change${detail ? ` (${detail})` : ''}. Transaction: ${hash}`;
+  return `${label} reached consensus without the expected contract state change${detail ? ` (${detail})` : ''}. Transaction: ${hash}`;
 }
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -230,7 +230,9 @@ export default function Page() {
       });
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
-        status: TransactionStatus.FINALIZED,
+        status: TransactionStatus.ACCEPTED,
+        interval: 5000,
+        retries: 120,
       });
 
       const afterCounts = (await client.readContract({
@@ -297,7 +299,9 @@ export default function Page() {
       });
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
-        status: TransactionStatus.FINALIZED,
+        status: TransactionStatus.ACCEPTED,
+        interval: 5000,
+        retries: 120,
       });
 
       const afterCounts = (await client.readContract({
@@ -351,7 +355,9 @@ export default function Page() {
       });
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
-        status: TransactionStatus.FINALIZED,
+        status: TransactionStatus.ACCEPTED,
+        interval: 5000,
+        retries: 120,
       });
       const incident = (await client.readContract({
         address: contractAddress as `0x${string}`,
