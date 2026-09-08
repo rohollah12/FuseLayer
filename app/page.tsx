@@ -139,7 +139,6 @@ export default function Page() {
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.FINALIZED,
-        fullTransaction: false,
       });
       requireSuccessfulExecution(receipt, 'Registration transaction');
       const counts = (await client.readContract({
@@ -175,7 +174,6 @@ export default function Page() {
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.FINALIZED,
-        fullTransaction: false,
       });
       requireSuccessfulExecution(receipt, 'Incident report transaction');
       const counts = (await client.readContract({
@@ -208,7 +206,6 @@ export default function Page() {
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.FINALIZED,
-        fullTransaction: false,
       });
       requireSuccessfulExecution(receipt, 'Incident evaluation');
       const incident = (await client.readContract({
