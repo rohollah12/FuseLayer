@@ -1,7 +1,7 @@
 
 def _deploy(direct_vm, direct_deploy, direct_alice, direct_bob):
     direct_vm.sender = direct_alice
-    vault = direct_deploy("contracts/demo_vault.py", direct_bob.as_hex)
+    vault = direct_deploy("contracts/demo_vault.py", "0x" + direct_bob.hex())
     return vault
 
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
+import { ExecutionResult, TransactionStatus } from 'genlayer-js/types';
 
 type IncidentResult = {
   profile?: string;
@@ -36,7 +37,7 @@ function requireSuccessfulExecution(receipt: unknown, label: string) {
     throw new Error(`${label} did not return a transaction receipt`);
   }
   const tx = receipt as { txExecutionResultName?: string };
-  if (tx.txExecutionResultName !== 'FINISHED_WITH_RETURN') {
+  if (tx.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
     const detail = tx.txExecutionResultName ? ` (${tx.txExecutionResultName})` : '';
     throw new Error(`${label} did not succeed${detail}`);
   }
@@ -133,8 +134,13 @@ export default function Page() {
         address: contractAddress as `0x${string}`,
         functionName: 'register_protocol',
         args: [protocolName.trim(), targetAddress.trim(), profile],
+        value: BigInt(0),
       });
-      const receipt = await client.waitForFinalization({ hash: tx });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: tx,
+        status: TransactionStatus.FINALIZED,
+        fullTransaction: false,
+      });
       requireSuccessfulExecution(receipt, 'Registration transaction');
       const counts = (await client.readContract({
         address: contractAddress as `0x${string}`,
@@ -164,8 +170,13 @@ export default function Page() {
         address: contractAddress as `0x${string}`,
         functionName: 'report_incident',
         args: [reportProtocolId.trim(), claim.trim(), JSON.stringify(evidence)],
+        value: BigInt(0),
       });
-      const receipt = await client.waitForFinalization({ hash: tx });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: tx,
+        status: TransactionStatus.FINALIZED,
+        fullTransaction: false,
+      });
       requireSuccessfulExecution(receipt, 'Incident report transaction');
       const counts = (await client.readContract({
         address: contractAddress as `0x${string}`,
@@ -192,8 +203,13 @@ export default function Page() {
         address: contractAddress as `0x${string}`,
         functionName: 'evaluate_incident',
         args: [latestIncidentId],
+        value: BigInt(0),
       });
-      const receipt = await client.waitForFinalization({ hash: tx });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: tx,
+        status: TransactionStatus.FINALIZED,
+        fullTransaction: false,
+      });
       requireSuccessfulExecution(receipt, 'Incident evaluation');
       const incident = (await client.readContract({
         address: contractAddress as `0x${string}`,
