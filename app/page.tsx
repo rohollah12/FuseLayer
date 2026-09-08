@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
-import { ExecutionResult, TransactionStatus } from 'genlayer-js/types';
+import { TransactionStatus } from 'genlayer-js/types';
 
 type IncidentResult = {
   profile?: string;
@@ -32,15 +32,20 @@ const profileCopy: Record<string, string> = {
   AVAILABILITY_FIRST: 'Keep unaffected functions running unless stronger containment is needed.',
 };
 
-function requireSuccessfulExecution(receipt: unknown, label: string) {
-  if (!receipt || typeof receipt !== 'object') {
-    throw new Error(`${label} did not return a transaction receipt`);
-  }
-  const tx = receipt as { txExecutionResultName?: string };
-  if (tx.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
-    const detail = tx.txExecutionResultName ? ` (${tx.txExecutionResultName})` : '';
-    throw new Error(`${label} did not succeed${detail}`);
-  }
+function countValue(value: unknown) {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value);
+  return 0n;
+}
+
+function failedWriteMessage(label: string, hash: string, receipt: unknown) {
+  const tx = (receipt && typeof receipt === 'object' ? receipt : {}) as {
+    statusName?: string;
+    txExecutionResultName?: string;
+  };
+  const detail = [tx.statusName, tx.txExecutionResultName].filter(Boolean).join(' / ');
+  return `${label} finalized without the expected contract state change${detail ? ` (${detail})` : ''}. Transaction: ${hash}`;
 }
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -98,6 +103,20 @@ export default function Page() {
     [evidenceText],
   );
 
+  useEffect(() => {
+    const provider = window.ethereum;
+    if (!provider?.on) return;
+
+    const handleAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0];
+      if (!Array.isArray(accounts)) return;
+      setWallet(typeof accounts[0] === 'string' ? accounts[0] : '');
+    };
+
+    provider.on('accountsChanged', handleAccountsChanged);
+    return () => provider.removeListener?.('accountsChanged', handleAccountsChanged);
+  }, []);
+
   async function runDemo() {
     setPreviewing(true);
     setPreviewError('');
@@ -136,6 +155,19 @@ export default function Page() {
     }
   }
 
+  async function disconnectWallet() {
+    setWallet('');
+    setWalletError('');
+    try {
+      await window.ethereum?.request({
+        method: 'wallet_revokePermissions',
+        params: [{ eth_accounts: {} }],
+      });
+    } catch {
+      // Some injected wallets do not implement permission revocation.
+    }
+  }
+
   async function liveClient(address?: string) {
     const account = address || wallet || (await connectWallet());
     if (!account) throw new Error('Connect a wallet first');
@@ -150,7 +182,7 @@ export default function Page() {
     if (chainId !== STUDIONET_CHAIN_ID) {
       throw new Error(`Wallet is on chain ${chainId}; FuseLayer is using Studionet (${STUDIONET_CHAIN_ID}).`);
     }
-    return client;
+    return { client, account };
   }
 
   async function registerProtocol() {
@@ -172,19 +204,24 @@ export default function Page() {
       setWalletError('Protected contract address must be a 0x address with 40 hexadecimal characters.');
       return;
     }
+
     setRegistering(true);
     setWalletError('');
+    setProtocolId('');
     try {
-      const client = await liveClient();
+      const { client, account } = await liveClient();
+      let beforeCounts: { protocols?: number | bigint | string };
       try {
-        await client.readContract({
+        beforeCounts = (await client.readContract({
           address: contractAddress as `0x${string}`,
           functionName: 'get_counts',
           args: [],
-        });
+        })) as { protocols?: number | bigint | string };
       } catch (error) {
         throw new Error(`Cannot read the configured FuseLayer contract on Studionet. Check the deployed address and network. ${errorMessage(error, '')}`.trim());
       }
+
+      const before = countValue(beforeCounts.protocols);
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'register_protocol',
@@ -195,15 +232,40 @@ export default function Page() {
         hash: tx,
         status: TransactionStatus.FINALIZED,
       });
-      requireSuccessfulExecution(receipt, 'Registration transaction');
-      const counts = (await client.readContract({
+
+      const afterCounts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
         args: [],
-      })) as { protocols?: number | bigint };
-      const id = String(counts?.protocols ?? '');
-      setProtocolId(id ? `Protocol ID ${id}` : 'Registered successfully');
-      if (id) setReportProtocolId(id);
+      })) as { protocols?: number | bigint | string };
+      const after = countValue(afterCounts.protocols);
+
+      let createdId = '';
+      const scanEnd = after < before + 25n ? after : before + 25n;
+      for (let id = before + 1n; id <= scanEnd; id += 1n) {
+        const protocol = (await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_protocol',
+          args: [id.toString()],
+        })) as { owner?: string; name?: string; target_address?: string; profile?: string };
+
+        if (
+          protocol?.owner?.toLowerCase() === account.toLowerCase() &&
+          protocol?.name === cleanName &&
+          protocol?.target_address?.toLowerCase() === cleanTarget.toLowerCase() &&
+          protocol?.profile === profile
+        ) {
+          createdId = id.toString();
+          break;
+        }
+      }
+
+      if (!createdId) {
+        throw new Error(failedWriteMessage('Registration', tx, receipt));
+      }
+
+      setProtocolId(`Protocol ID ${createdId}`);
+      setReportProtocolId(createdId);
     } catch (error) {
       setWalletError(errorMessage(error, 'Registration failed'));
     } finally {
@@ -219,7 +281,14 @@ export default function Page() {
     setReporting(true);
     setReportMessage('');
     try {
-      const client = await liveClient();
+      const { client, account } = await liveClient();
+      const beforeCounts = (await client.readContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'get_counts',
+        args: [],
+      })) as { incidents?: number | bigint | string };
+      const before = countValue(beforeCounts.incidents);
+
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'report_incident',
@@ -230,15 +299,37 @@ export default function Page() {
         hash: tx,
         status: TransactionStatus.FINALIZED,
       });
-      requireSuccessfulExecution(receipt, 'Incident report transaction');
-      const counts = (await client.readContract({
+
+      const afterCounts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
         args: [],
-      })) as { incidents?: number | bigint };
-      const id = String(counts?.incidents ?? '');
-      setLatestIncidentId(id);
-      setReportMessage(id ? `Incident ${id} submitted. It is ready for consensus evaluation.` : `Incident submitted. Transaction: ${tx}`);
+      })) as { incidents?: number | bigint | string };
+      const after = countValue(afterCounts.incidents);
+
+      let createdId = '';
+      const scanEnd = after < before + 25n ? after : before + 25n;
+      for (let id = before + 1n; id <= scanEnd; id += 1n) {
+        const incident = (await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_incident',
+          args: [id.toString()],
+        })) as { protocol_id?: string; reporter?: string };
+        if (
+          incident?.protocol_id === reportProtocolId.trim() &&
+          incident?.reporter?.toLowerCase() === account.toLowerCase()
+        ) {
+          createdId = id.toString();
+          break;
+        }
+      }
+
+      if (!createdId) {
+        throw new Error(failedWriteMessage('Incident report', tx, receipt));
+      }
+
+      setLatestIncidentId(createdId);
+      setReportMessage(`Incident ${createdId} submitted. It is ready for consensus evaluation.`);
     } catch (error) {
       setReportMessage(errorMessage(error, 'Incident report failed'));
     } finally {
@@ -251,7 +342,7 @@ export default function Page() {
     setEvaluating(true);
     setReportMessage('');
     try {
-      const client = await liveClient();
+      const { client } = await liveClient();
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'evaluate_incident',
@@ -262,14 +353,18 @@ export default function Page() {
         hash: tx,
         status: TransactionStatus.FINALIZED,
       });
-      requireSuccessfulExecution(receipt, 'Incident evaluation');
       const incident = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_incident',
         args: [latestIncidentId],
       })) as { status?: string; action?: string; severity?: string; component?: string };
+
+      if (!incident?.status || incident.status === 'PENDING') {
+        throw new Error(failedWriteMessage('Incident evaluation', tx, receipt));
+      }
+
       setReportMessage(
-        `Incident ${latestIncidentId}: ${incident?.status ?? 'evaluated'} · ${incident?.severity ?? ''} · ${incident?.component ?? ''} · action ${incident?.action ?? ''}`
+        `Incident ${latestIncidentId}: ${incident.status} · ${incident.severity ?? ''} · ${incident.component ?? ''} · action ${incident.action ?? ''}`
       );
     } catch (error) {
       setReportMessage(errorMessage(error, 'Incident evaluation failed'));
@@ -285,9 +380,16 @@ export default function Page() {
           <strong>FuseLayer</strong>
           <span className="headerNote">incident containment for GenLayer contracts</span>
         </div>
-        <button className="button buttonSmall" onClick={connectWallet}>
-          {wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'Connect wallet'}
-        </button>
+        <div className="walletArea">
+          {wallet ? (
+            <>
+              <span className="walletAddress">{wallet.slice(0, 6)}…{wallet.slice(-4)}</span>
+              <button className="button buttonSmall" type="button" onClick={disconnectWallet}>Disconnect</button>
+            </>
+          ) : (
+            <button className="button buttonSmall" type="button" onClick={connectWallet}>Connect wallet</button>
+          )}
+        </div>
       </header>
 
       <div className="content">

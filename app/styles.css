@@ -54,6 +54,18 @@ button:disabled { cursor: default; opacity: .6; }
 .topbar strong { font-size: 16px; }
 .headerNote { color: var(--muted); font-size: 13px; }
 
+.walletArea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.walletAddress {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .content {
   width: min(960px, calc(100% - 32px));
   margin: 0 auto;
