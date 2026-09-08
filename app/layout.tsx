@@ -4,7 +4,7 @@ import './styles.css';
 
 export const metadata: Metadata = {
   title: 'FuseLayer',
-  description: 'Incident containment and recovery for GenLayer contracts.',
+  description: 'Incident containment for GenLayer contracts.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

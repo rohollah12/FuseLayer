@@ -43,6 +43,34 @@ function requireSuccessfulExecution(receipt: unknown, label: string) {
   }
 }
 
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const STUDIONET_CHAIN_ID = '0xf22f';
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const value = error as {
+      message?: unknown;
+      shortMessage?: unknown;
+      details?: unknown;
+      code?: unknown;
+    };
+    for (const candidate of [value.shortMessage, value.message, value.details]) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        const code = value.code !== undefined ? ` [code ${String(value.code)}]` : '';
+        return `${candidate}${code}`;
+      }
+    }
+    try {
+      return JSON.stringify(error, (_, item) => typeof item === 'bigint' ? item.toString() : item);
+    } catch {
+      // fall through
+    }
+  }
+  return fallback;
+}
+
 export default function Page() {
   const [profile, setProfile] = useState('BALANCED');
   const [previewing, setPreviewing] = useState(false);
@@ -84,7 +112,7 @@ export default function Page() {
       if (!response.ok) throw new Error(data.error ?? 'Demo failed');
       setPreview(data.result ?? null);
     } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : 'Demo failed');
+      setPreviewError(errorMessage(error, 'Demo failed'));
     } finally {
       setPreviewing(false);
     }
@@ -103,7 +131,7 @@ export default function Page() {
       setWallet(address);
       return address;
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : 'Wallet connection failed');
+      setWalletError(errorMessage(error, 'Wallet connection failed'));
       return '';
     }
   }
@@ -118,22 +146,49 @@ export default function Page() {
       provider: window.ethereum as never,
     });
     await client.connect('studionet');
+    const chainId = String(await window.ethereum.request({ method: 'eth_chainId' })).toLowerCase();
+    if (chainId !== STUDIONET_CHAIN_ID) {
+      throw new Error(`Wallet is on chain ${chainId}; FuseLayer is using Studionet (${STUDIONET_CHAIN_ID}).`);
+    }
     return client;
   }
 
   async function registerProtocol() {
+    const cleanName = protocolName.trim();
+    const cleanTarget = targetAddress.trim();
     if (!contractAddress) {
       setWalletError('NEXT_PUBLIC_FUSELAYER_CONTRACT_ADDRESS is not configured.');
+      return;
+    }
+    if (!ADDRESS_RE.test(contractAddress)) {
+      setWalletError('The configured FuseLayer address is not a valid 0x address. Check the Vercel environment variable.');
+      return;
+    }
+    if (cleanName.length < 3) {
+      setWalletError('Protocol name must be at least 3 characters.');
+      return;
+    }
+    if (!ADDRESS_RE.test(cleanTarget)) {
+      setWalletError('Protected contract address must be a 0x address with 40 hexadecimal characters.');
       return;
     }
     setRegistering(true);
     setWalletError('');
     try {
       const client = await liveClient();
+      try {
+        await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_counts',
+          args: [],
+        });
+      } catch (error) {
+        throw new Error(`Cannot read the configured FuseLayer contract on Studionet. Check the deployed address and network. ${errorMessage(error, '')}`.trim());
+      }
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'register_protocol',
-        args: [protocolName.trim(), targetAddress.trim(), profile],
+        args: [cleanName, cleanTarget, profile],
         value: BigInt(0),
       });
       const receipt = await client.waitForTransactionReceipt({
@@ -150,7 +205,7 @@ export default function Page() {
       setProtocolId(id ? `Protocol ID ${id}` : 'Registered successfully');
       if (id) setReportProtocolId(id);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : 'Registration failed');
+      setWalletError(errorMessage(error, 'Registration failed'));
     } finally {
       setRegistering(false);
     }
@@ -185,7 +240,7 @@ export default function Page() {
       setLatestIncidentId(id);
       setReportMessage(id ? `Incident ${id} submitted. It is ready for consensus evaluation.` : `Incident submitted. Transaction: ${tx}`);
     } catch (error) {
-      setReportMessage(error instanceof Error ? error.message : 'Incident report failed');
+      setReportMessage(errorMessage(error, 'Incident report failed'));
     } finally {
       setReporting(false);
     }
@@ -217,172 +272,196 @@ export default function Page() {
         `Incident ${latestIncidentId}: ${incident?.status ?? 'evaluated'} · ${incident?.severity ?? ''} · ${incident?.component ?? ''} · action ${incident?.action ?? ''}`
       );
     } catch (error) {
-      setReportMessage(error instanceof Error ? error.message : 'Incident evaluation failed');
+      setReportMessage(errorMessage(error, 'Incident evaluation failed'));
     } finally {
       setEvaluating(false);
     }
   }
 
   return (
-    <main>
-      <nav className="nav shell">
-        <div className="brand"><span className="brandMark">F</span>FuseLayer</div>
-        <div className="navRight">
-          <span className="freeBadge">Free demo</span>
-          <button className="ghost small" onClick={connectWallet}>
-            {wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'Connect wallet'}
-          </button>
-        </div>
-      </nav>
-
-      <section className="hero shell">
-        <div className="eyebrow">FuseLayer</div>
-        <h1>Selective incident containment for smart contracts.</h1>
-        <p className="lead">
-          GenLayer checks the incident evidence. FuseLayer uses the agreed severity, affected component and scope to decide how much of the protocol actually needs to be restricted.
-        </p>
-        <div className="heroActions">
-          <button className="primary" onClick={runDemo} disabled={previewing}>
-            {previewing ? 'Checking evidence…' : 'Try demo'}
-          </button>
-          <a className="textLink" href="#protect">Protect a contract ↓</a>
-        </div>
-      </section>
-
-      <section className="shell grid2 demoSection">
-        <div className="panel">
-          <div className="panelHeader">
-            <div>
-              <div className="label">Safety profile</div>
-              <h2>Response profile</h2>
-            </div>
-          </div>
-          <div className="profileRow">
-            {['BALANCED', 'SAFETY_FIRST', 'AVAILABILITY_FIRST'].map((item) => (
-              <button
-                key={item}
-                className={`profile ${profile === item ? 'active' : ''}`}
-                onClick={() => setProfile(item)}
-              >
-                {item.replaceAll('_', ' ')}
-              </button>
-            ))}
-          </div>
-          <p className="muted">{profileCopy[profile]}</p>
-          <div className="demoEvidence">
-            <div className="label">Demo incident</div>
-            <p>{DEMO_CLAIM}</p>
-            <span>2 public demo notes · no wallet required</span>
-          </div>
-        </div>
-
-        <div className="panel resultPanel">
-          {!preview && !previewError && (
-            <div className="emptyResult">
-              <div className="pulseDot" />
-              <strong>No result yet</strong>
-              <span>Run the sample incident to see the result.</span>
-            </div>
-          )}
-          {previewError && <div className="errorBox">{previewError}</div>}
-          {preview && (
-            <>
-              <div className="resultTop">
-                <div>
-                  <div className="label">Containment plan</div>
-                  <div className="statusLine"><span className="liveDot" />{preview.status}</div>
-                </div>
-                <div className={`actionBadge level${preview.action_level ?? 0}`}>{preview.action}</div>
-              </div>
-              <div className="metrics">
-                <Metric title="Severity" value={preview.severity ?? '—'} />
-                <Metric title="Component" value={preview.component ?? '—'} />
-                <Metric title="Blast radius" value={preview.breadth?.replaceAll('_', ' ') ?? '—'} />
-              </div>
-              <p className="summary">{preview.summary}</p>
-              <div className="flow">
-                <FlowStep n="1" title="Check" body="Validators review the submitted evidence." />
-                <FlowStep n="2" title="Scope" body="The result identifies the affected component and whether the issue is local or protocol-wide." />
-                <FlowStep n="3" title="Apply" body={`The ${profile.replaceAll('_', ' ').toLowerCase()} profile maps that result to ${preview.action ?? 'NONE'}.`} />
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-
-      <section className="shell protectSection" id="protect">
-        <div className="sectionIntro">
-          <div className="eyebrow">Register a contract</div>
-          <h2>Protect a contract</h2>
-          <p>Add the target contract and choose a safety profile. That is all the setup needed for this demo.</p>
-        </div>
-
-        <div className="grid2">
-          <div className="panel formPanel">
-            <div className="stepLabel">01 · Register</div>
-            <label>Protocol name</label>
-            <input value={protocolName} onChange={(e) => setProtocolName(e.target.value)} placeholder="My protocol" />
-            <label>Protected Intelligent Contract</label>
-            <input value={targetAddress} onChange={(e) => setTargetAddress(e.target.value)} placeholder="0x…" />
-            <label>Safety profile</label>
-            <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-              <option value="BALANCED">Balanced</option>
-              <option value="SAFETY_FIRST">Safety first</option>
-              <option value="AVAILABILITY_FIRST">Availability first</option>
-            </select>
-            <button className="primary full" onClick={registerProtocol} disabled={registering}>
-              {registering ? 'Registering…' : 'Protect contract'}
-            </button>
-            {protocolId && <div className="successBox">{protocolId}</div>}
-            {walletError && <div className="errorBox">{walletError}</div>}
-          </div>
-
-          <div className="panel formPanel">
-            <div className="stepLabel">02 · Report an incident</div>
-            <label>Protocol ID</label>
-            <input value={reportProtocolId} onChange={(e) => setReportProtocolId(e.target.value)} placeholder="1" />
-            <label>What is happening?</label>
-            <textarea value={claim} onChange={(e) => setClaim(e.target.value)} rows={3} />
-            <label>Evidence URLs <span className="optional">1–3, one per line</span></label>
-            <textarea value={evidenceText} onChange={(e) => setEvidenceText(e.target.value)} rows={3} />
-            <button className="secondary full" onClick={reportIncident} disabled={reporting}>
-              {reporting ? 'Submitting…' : 'Submit incident'}
-            </button>
-            {latestIncidentId && (
-              <button className="primary full" onClick={evaluateLatestIncident} disabled={evaluating}>
-                {evaluating ? 'Running consensus…' : `Evaluate incident ${latestIncidentId}`}
-              </button>
-            )}
-            {reportMessage && <div className="infoBox">{reportMessage}</div>}
-          </div>
-        </div>
-      </section>
-
-      <section className="shell thesis">
+    <main className="site">
+      <header className="topbar">
         <div>
-          <div className="eyebrow">Containment levels</div>
-          <h2>Safety levels</h2>
+          <strong>FuseLayer</strong>
+          <span className="headerNote">incident containment for GenLayer contracts</span>
         </div>
-        <div className="thesisGrid">
-          <div><strong>RESTRICT</strong><span>Limit exposure without taking the service offline.</span></div>
-          <div><strong>ISOLATE</strong><span>Disable the affected part of the protocol.</span></div>
-          <div><strong>HALT</strong><span>Stop the protocol when the incident is broad enough to require it.</span></div>
-          <div><strong>RECOVER</strong><span>Lower the safety level after the fix is verified.</span></div>
-        </div>
-      </section>
+        <button className="button buttonSmall" onClick={connectWallet}>
+          {wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'Connect wallet'}
+        </button>
+      </header>
 
-      <footer className="shell footer">
-        <span>FuseLayer · GenLayer</span>
-        <span>Hackathon demo is free. A production deployment could use a one-time setup fee per protected contract, for example around $10 for a basic setup.</span>
-      </footer>
+      <div className="content">
+        <section className="intro">
+          <h1>FuseLayer</h1>
+          <p>
+            Submit evidence for a contract incident and choose how aggressively the protected contract should respond.
+            FuseLayer can restrict one area, isolate a component, or halt the whole target when necessary.
+          </p>
+        </section>
+
+        <section className="section">
+          <div className="sectionHeading">
+            <div>
+              <h2>Sample incident</h2>
+              <p>Runs a preview only. No wallet transaction is sent.</p>
+            </div>
+            <button className="button" onClick={runDemo} disabled={previewing}>
+              {previewing ? 'Running…' : 'Run sample'}
+            </button>
+          </div>
+
+          <div className="demoGrid">
+            <div className="plainBox">
+              <label htmlFor="demo-profile">Response profile</label>
+              <select id="demo-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
+                <option value="BALANCED">Balanced</option>
+                <option value="SAFETY_FIRST">Safety first</option>
+                <option value="AVAILABILITY_FIRST">Availability first</option>
+              </select>
+              <p className="help">{profileCopy[profile]}</p>
+
+              <div className="sampleText">
+                <span>Claim</span>
+                <p>{DEMO_CLAIM}</p>
+                <small>Evidence: 2 public demo files</small>
+              </div>
+            </div>
+
+            <div className="plainBox resultBox">
+              <h3>Preview result</h3>
+              {!preview && !previewError && <p className="quiet">Run the sample to see the result here.</p>}
+              {previewError && <div className="message error">{previewError}</div>}
+              {preview && (
+                <>
+                  <dl className="resultList">
+                    <ResultRow label="Status" value={preview.status ?? '—'} />
+                    <ResultRow label="Severity" value={preview.severity ?? '—'} />
+                    <ResultRow label="Component" value={preview.component ?? '—'} />
+                    <ResultRow label="Scope" value={preview.breadth?.replaceAll('_', ' ') ?? '—'} />
+                    <ResultRow label="Action" value={preview.action ?? 'NONE'} strong />
+                  </dl>
+                  {preview.summary && <p className="resultSummary">{preview.summary}</p>}
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="section" id="protect">
+          <div className="sectionHeading simple">
+            <div>
+              <h2>Live contract</h2>
+              <p>Register a target contract, then submit an incident against its protocol ID.</p>
+            </div>
+          </div>
+
+          <div className="formsGrid">
+            <form className="formCard" onSubmit={(e) => { e.preventDefault(); registerProtocol(); }}>
+              <h3>Register contract</h3>
+
+              <label htmlFor="protocol-name">Protocol name</label>
+              <input
+                id="protocol-name"
+                value={protocolName}
+                onChange={(e) => setProtocolName(e.target.value)}
+                placeholder="My protocol"
+              />
+
+              <label htmlFor="target-address">Protected contract address</label>
+              <input
+                id="target-address"
+                value={targetAddress}
+                onChange={(e) => setTargetAddress(e.target.value)}
+                placeholder="0x…"
+                spellCheck={false}
+              />
+
+              <label htmlFor="live-profile">Response profile</label>
+              <select id="live-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
+                <option value="BALANCED">Balanced</option>
+                <option value="SAFETY_FIRST">Safety first</option>
+                <option value="AVAILABILITY_FIRST">Availability first</option>
+              </select>
+
+              <button className="button buttonPrimary" type="submit" disabled={registering}>
+                {registering ? 'Registering…' : 'Register'}
+              </button>
+
+              {protocolId && <div className="message success">{protocolId}</div>}
+              {walletError && <div className="message error">{walletError}</div>}
+            </form>
+
+            <form className="formCard" onSubmit={(e) => { e.preventDefault(); reportIncident(); }}>
+              <h3>Report incident</h3>
+
+              <label htmlFor="protocol-id">Protocol ID</label>
+              <input
+                id="protocol-id"
+                value={reportProtocolId}
+                onChange={(e) => setReportProtocolId(e.target.value)}
+                placeholder="1"
+              />
+
+              <label htmlFor="incident-claim">What happened?</label>
+              <textarea
+                id="incident-claim"
+                value={claim}
+                onChange={(e) => setClaim(e.target.value)}
+                rows={4}
+              />
+
+              <label htmlFor="evidence-urls">Evidence URLs <span className="optional">(1–3, one per line)</span></label>
+              <textarea
+                id="evidence-urls"
+                value={evidenceText}
+                onChange={(e) => setEvidenceText(e.target.value)}
+                rows={4}
+                spellCheck={false}
+              />
+
+              <button className="button buttonPrimary" type="submit" disabled={reporting}>
+                {reporting ? 'Submitting…' : 'Submit incident'}
+              </button>
+
+              {latestIncidentId && (
+                <button
+                  className="button"
+                  type="button"
+                  onClick={evaluateLatestIncident}
+                  disabled={evaluating}
+                >
+                  {evaluating ? 'Evaluating…' : `Evaluate incident ${latestIncidentId}`}
+                </button>
+              )}
+
+              {reportMessage && <div className="message info">{reportMessage}</div>}
+            </form>
+          </div>
+        </section>
+
+        <section className="section compactSection">
+          <h2>Containment levels</h2>
+          <table className="levelsTable">
+            <tbody>
+              <tr><th>RESTRICT</th><td>Limit risky operations while keeping the target online.</td></tr>
+              <tr><th>ISOLATE</th><td>Disable the affected component.</td></tr>
+              <tr><th>HALT</th><td>Stop the target when the incident affects the protocol broadly.</td></tr>
+              <tr><th>RECOVER</th><td>Reduce containment after remediation evidence is accepted.</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <footer className="footer">FuseLayer · GenLayer hackathon build</footer>
     </main>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
-  return <div className="metric"><span>{title}</span><strong>{value}</strong></div>;
-}
-
-function FlowStep({ n, title, body }: { n: string; title: string; body: string }) {
-  return <div className="flowStep"><span>{n}</span><div><strong>{title}</strong><p>{body}</p></div></div>;
+function ResultRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd className={strong ? 'resultStrong' : ''}>{value}</dd>
+    </div>
+  );
 }
