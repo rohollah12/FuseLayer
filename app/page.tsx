@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { createClient, isSuccessful } from 'genlayer-js';
+import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
 
 type IncidentResult = {
@@ -30,6 +30,17 @@ const profileCopy: Record<string, string> = {
   SAFETY_FIRST: 'Escalate sooner when the evidence points to meaningful risk.',
   AVAILABILITY_FIRST: 'Keep unaffected functions running unless stronger containment is needed.',
 };
+
+function requireSuccessfulExecution(receipt: unknown, label: string) {
+  if (!receipt || typeof receipt !== 'object') {
+    throw new Error(`${label} did not return a transaction receipt`);
+  }
+  const tx = receipt as { txExecutionResultName?: string };
+  if (tx.txExecutionResultName !== 'FINISHED_WITH_RETURN') {
+    const detail = tx.txExecutionResultName ? ` (${tx.txExecutionResultName})` : '';
+    throw new Error(`${label} did not succeed${detail}`);
+  }
+}
 
 export default function Page() {
   const [profile, setProfile] = useState('BALANCED');
@@ -124,7 +135,7 @@ export default function Page() {
         args: [protocolName.trim(), targetAddress.trim(), profile],
       });
       const receipt = await client.waitForFinalization({ hash: tx });
-      if (!isSuccessful(receipt)) throw new Error('Registration transaction did not succeed');
+      requireSuccessfulExecution(receipt, 'Registration transaction');
       const counts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
@@ -155,7 +166,7 @@ export default function Page() {
         args: [reportProtocolId.trim(), claim.trim(), JSON.stringify(evidence)],
       });
       const receipt = await client.waitForFinalization({ hash: tx });
-      if (!isSuccessful(receipt)) throw new Error('Incident report transaction did not succeed');
+      requireSuccessfulExecution(receipt, 'Incident report transaction');
       const counts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
@@ -183,7 +194,7 @@ export default function Page() {
         args: [latestIncidentId],
       });
       const receipt = await client.waitForFinalization({ hash: tx });
-      if (!isSuccessful(receipt)) throw new Error('Incident evaluation did not succeed');
+      requireSuccessfulExecution(receipt, 'Incident evaluation');
       const incident = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_incident',
