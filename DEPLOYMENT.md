@@ -272,19 +272,5 @@ ISOLATE -> RESTRICT
 
 A second verified recovery can continue toward `NONE`.
 
-## Before submitting
-
-Keep these ready:
-
-```text
-GitHub repository URL
-Vercel URL
-FuseLayer contract address
-DemoVault contract address
-registered demo protocol ID
-GitHub Actions run URL
-```
 
 The hackathon build is free. There is no checkout or payment setup to configure.
-
-For the submission itself, provide the already deployed addresses and protocol ID so reviewers can start with the live demo. Full deployment from scratch should be optional, not the first thing they have to do.
