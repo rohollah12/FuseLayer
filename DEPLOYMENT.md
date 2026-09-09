@@ -1,6 +1,6 @@
 # Deployment
 
-This is the full reproduction path. A reviewer does not need to go through all of it just to understand the project.
+This is the full reproduction path. A reader does not need to go through all of it just to understand the project.
 
 ## Reviewer paths
 
