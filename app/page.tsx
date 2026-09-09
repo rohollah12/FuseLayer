@@ -483,6 +483,9 @@ export default function Page() {
                 placeholder="0x…"
                 spellCheck={false}
               />
+              <p className="help">
+                The target must authorize this wallet first. For DemoVault, call authorize_registration(wallet) from the vault owner account in Studio.
+              </p>
 
               <label htmlFor="live-profile">Response profile</label>
               <select id="live-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>

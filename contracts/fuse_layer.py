@@ -26,6 +26,7 @@ ACTION_NAMES = ["NONE", "RESTRICT", "ISOLATE", "HALT"]
 class ContainmentTarget:
     class View:
         def get_safety_state(self) -> dict: ...
+        def get_fuselayer_registration(self) -> dict: ...
 
     class Write:
         def apply_containment(self, level: u256, component: str, incident_id: str) -> None: ...
@@ -79,6 +80,7 @@ class Recovery:
 class FuseLayer(gl.Contract):
 
     protocols: TreeMap[str, Protocol]
+    protocol_by_target: TreeMap[str, str]
     incidents: TreeMap[str, Incident]
     recoveries: TreeMap[str, Recovery]
     protocol_count: u256
@@ -96,6 +98,11 @@ class FuseLayer(gl.Contract):
         clean_target = self._normalize_address(target_address)
         clean_profile = self._validate_profile(profile)
 
+        if clean_target in self.protocol_by_target:
+            raise gl.vm.UserError("Target contract is already registered")
+
+        self._require_target_authorization(clean_target, gl.message.sender_address.as_hex)
+
         self.protocol_count += 1
         protocol_id = str(self.protocol_count)
         self.protocols[protocol_id] = Protocol(
@@ -108,6 +115,7 @@ class FuseLayer(gl.Contract):
             current_component="",
             last_incident_id="",
         )
+        self.protocol_by_target[clean_target] = protocol_id
         return protocol_id
 
     @gl.public.write
@@ -339,6 +347,34 @@ class FuseLayer(gl.Contract):
             "incidents": int(self.incident_count),
             "recoveries": int(self.recovery_count),
         }
+
+    def _read_target_registration(self, target_address: str) -> dict:
+        try:
+            value = ContainmentTarget(Address(target_address)).view().get_fuselayer_registration()
+        except Exception:
+            raise gl.vm.UserError("Target contract does not expose FuseLayer registration authorization")
+        if not isinstance(value, dict):
+            raise gl.vm.UserError("Target contract returned invalid registration authorization")
+        return value
+
+    def _own_address(self) -> str:
+        return gl.message.contract_address.as_hex
+
+    def _require_target_authorization(self, target_address: str, registrant: str) -> None:
+        value = self._read_target_registration(target_address)
+        raw_authorized = value.get("authorized_registrant", "")
+        raw_guardian = value.get("guardian", "")
+        if not isinstance(raw_authorized, str) or not isinstance(raw_guardian, str):
+            raise gl.vm.UserError("Target contract returned invalid registration authorization")
+        try:
+            authorized = Address(raw_authorized).as_hex
+            guardian = Address(raw_guardian).as_hex
+        except Exception:
+            raise gl.vm.UserError("Target contract returned invalid registration authorization")
+        if guardian.lower() != self._own_address().lower():
+            raise gl.vm.UserError("Target contract does not recognize this FuseLayer as guardian")
+        if authorized.lower() != registrant.lower():
+            raise gl.vm.UserError("Wallet is not authorized by the target contract")
 
     def _require_protocol(self, protocol_id: str) -> Protocol:
         if not isinstance(protocol_id, str) or protocol_id not in self.protocols:

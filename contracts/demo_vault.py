@@ -10,6 +10,7 @@ class DemoVault(gl.Contract):
 
     owner: Address
     guardian: Address
+    authorized_registrant: Address
     safety_level: u256
     component: str
     last_reference: str
@@ -20,9 +21,27 @@ class DemoVault(gl.Contract):
             self.guardian = Address(guardian_address)
         except Exception:
             raise gl.vm.UserError("Guardian address is invalid")
+        self.authorized_registrant = self.owner
         self.safety_level = 0
         self.component = ""
         self.last_reference = ""
+
+    @gl.public.write
+    def authorize_registration(self, registrant_address: str) -> None:
+        if gl.message.sender_address != self.owner:
+            raise gl.vm.UserError("Only the vault owner can authorize registration")
+        try:
+            self.authorized_registrant = Address(registrant_address)
+        except Exception:
+            raise gl.vm.UserError("Registrant address is invalid")
+
+    @gl.public.view
+    def get_fuselayer_registration(self) -> dict:
+        return {
+            "owner": self.owner.as_hex,
+            "guardian": self.guardian.as_hex,
+            "authorized_registrant": self.authorized_registrant.as_hex,
+        }
 
     @gl.public.write
     def apply_containment(self, level: u256, component: str, incident_id: str) -> None:

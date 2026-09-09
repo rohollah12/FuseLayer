@@ -1,6 +1,24 @@
 # Deployment
 
-This is the setup I use for the hackathon build.
+This is the full reproduction path. A reviewer does not need to go through all of it just to understand the project.
+
+## Reviewer paths
+
+There are three useful ways to check FuseLayer. For live wallet transactions, use MetaMask in this build. Rabby currently fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The preview path below does not require any wallet.
+
+**1. Preview only**
+
+Open the deployed web app and click **Try demo**. No wallet, registration, or deployment is required. This shows the incident classification and containment decision without writing state.
+
+**2. Check the deployed demo**
+
+Use the FuseLayer address, DemoVault address, and protocol ID supplied with the submission. The reviewer can inspect the registered protocol and target state directly. Incident reporting and evaluation are public, so a fresh incident can also be submitted if the demo state is suitable for it.
+
+**3. Reproduce everything from scratch**
+
+Follow the steps below. The included `demo_vault.py` is the test target; there is no need to write a new contract. The only extra security step is authorizing the wallet that will register the vault.
+
+---
 
 ## 1. Push the repo
 
@@ -87,9 +105,36 @@ After deployment, keep this address as:
 DEMOVAULT_ADDRESS
 ```
 
-## 5. Register DemoVault
+## 5. Authorize the registering wallet
 
-Open the deployed FuseLayer contract and call `register_protocol` with:
+Do this before registration. Open the deployed DemoVault in Studio and use the account that deployed the vault.
+
+Call:
+
+```text
+authorize_registration
+```
+
+Set `registrant_address` to the MetaMask address you will use on the FuseLayer site. The current live flow is tested with MetaMask; use the wallet-free **Try demo** path if you do not want to connect a wallet.
+
+Then check:
+
+```text
+get_fuselayer_registration()
+```
+
+It should show:
+
+```text
+guardian: <FUSELAYER_ADDRESS>
+authorized_registrant: <YOUR_BROWSER_WALLET_ADDRESS>
+```
+
+Only the vault owner can change this authorization.
+
+## 6. Register DemoVault
+
+You can register from the web app with the authorized wallet, or from Studio if the active Studio account is the authorized address. Use:
 
 ```text
 name: FuseLayer DemoVault
@@ -97,7 +142,7 @@ target_address: <DEMOVAULT_ADDRESS>
 profile: BALANCED
 ```
 
-On a fresh contract this will normally return protocol ID `1`.
+On a fresh FuseLayer deployment this will normally return protocol ID `1`.
 
 Check it with:
 
@@ -107,7 +152,9 @@ get_protocol("1")
 
 The initial safety state should be level `0` / `NONE`.
 
-## 6. Test an incident in Studio
+A second registration of the same DemoVault should fail with `Target contract is already registered`. A wallet that was not authorized by DemoVault should fail with `Wallet is not authorized by the target contract`.
+
+## 7. Test an incident in Studio
 
 First make sure these two files are publicly reachable from GitHub:
 
@@ -135,7 +182,7 @@ For the supplied demo evidence, the expected result is a confirmed, active, high
 
 The exact summary text can vary because it is generated through consensus. The structured fields are what matter.
 
-## 7. Check that DemoVault changed
+## 8. Check that DemoVault changed
 
 Wait for the FuseLayer transaction and finalized child message to complete.
 
@@ -161,7 +208,7 @@ can_withdraw(10)
 
 It should return `false` while withdrawals are isolated.
 
-## 8. Deploy the frontend on Vercel
+## 9. Deploy the frontend on Vercel
 
 Import the GitHub repository into Vercel.
 
@@ -183,7 +230,7 @@ Both variables point to FuseLayer, not DemoVault.
 
 Deploy the project.
 
-## 9. Check the preview
+## 10. Check the preview
 
 Open the Vercel site and click **Try demo**.
 
@@ -191,11 +238,11 @@ This path does not need a wallet and does not write state. The expected action f
 
 If the preview cannot load evidence, check that the GitHub repo is public and that `REPO_RAW` in `app/page.tsx` points to the correct repository.
 
-## 10. Check the live wallet flow
+## 11. Check the live wallet flow
 
-Connect a browser wallet.
+Connect the same browser wallet that DemoVault authorized in step 5.
 
-Register a contract with:
+Register the contract with:
 
 ```text
 Protocol name: My protocol
@@ -205,7 +252,7 @@ Safety profile: Balanced
 
 After registration, use the returned protocol ID to submit an incident. Then evaluate the incident from the same page.
 
-## 11. Recovery test (optional)
+## 12. Recovery test (optional)
 
 After an incident is contained, call `request_recovery` on FuseLayer with the current incident ID, a short fix description, and:
 
@@ -232,7 +279,10 @@ GitHub repository URL
 Vercel URL
 FuseLayer contract address
 DemoVault contract address
+registered demo protocol ID
 GitHub Actions run URL
 ```
 
 The hackathon build is free. There is no checkout or payment setup to configure.
+
+For the submission itself, provide the already deployed addresses and protocol ID so reviewers can start with the live demo. Full deployment from scratch should be optional, not the first thing they have to do.

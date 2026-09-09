@@ -1,8 +1,27 @@
 
+def _address_hex(value):
+    return "0x" + value.hex()
+
+
 def _deploy(direct_vm, direct_deploy, direct_alice, direct_bob):
     direct_vm.sender = direct_alice
     vault = direct_deploy("contracts/demo_vault.py", "0x" + direct_bob.hex())
     return vault
+
+
+def test_only_owner_can_authorize_registration(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    vault = _deploy(direct_vm, direct_deploy, direct_alice, direct_bob)
+    registration = vault.get_fuselayer_registration()
+    assert registration["authorized_registrant"].lower() == _address_hex(direct_alice).lower()
+
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert("Only the vault owner can authorize registration"):
+        vault.authorize_registration(_address_hex(direct_charlie))
+
+    direct_vm.sender = direct_alice
+    vault.authorize_registration(_address_hex(direct_charlie))
+    registration = vault.get_fuselayer_registration()
+    assert registration["authorized_registrant"].lower() == _address_hex(direct_charlie).lower()
 
 
 def test_only_guardian_can_contain(direct_vm, direct_deploy, direct_alice, direct_bob):

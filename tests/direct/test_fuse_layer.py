@@ -6,6 +6,18 @@ URLS = json.dumps(["https://example.com/incident"])
 CLAIM = "Unauthorized withdrawals are currently possible through the vault withdrawal authorization path."
 
 
+def _address_hex(value):
+    return "0x" + value.hex()
+
+
+def _authorize_target(contract, registrant, guardian=TARGET):
+    contract._own_address = lambda: TARGET
+    contract._read_target_registration = lambda _target: {
+        "guardian": guardian,
+        "authorized_registrant": _address_hex(registrant),
+    }
+
+
 def _analysis(status="CONFIRMED", active=True, severity="HIGH", component="WITHDRAWALS", breadth="LOCAL", summary="Evidence supports an active withdrawal incident."):
     return json.dumps(
         {
@@ -28,6 +40,7 @@ def _mock_incident(vm, response):
 def _deploy(direct_vm, direct_deploy, direct_alice, profile="BALANCED"):
     contract = direct_deploy("contracts/fuse_layer.py")
     direct_vm.sender = direct_alice
+    _authorize_target(contract, direct_alice)
     protocol_id = contract.register_protocol("Demo lending vault", TARGET, profile)
     return contract, protocol_id
 
@@ -39,6 +52,31 @@ def test_register_protocol_is_minimal(direct_vm, direct_deploy, direct_alice):
     assert protocol["profile"] == "BALANCED"
     assert protocol["safety_level"] == 0
     assert protocol["safety_action"] == "NONE"
+
+
+def test_registration_requires_target_to_use_this_fuselayer(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy("contracts/fuse_layer.py")
+    direct_vm.sender = direct_alice
+    _authorize_target(contract, direct_alice, "0x2222222222222222222222222222222222222222")
+    with direct_vm.expect_revert("Target contract does not recognize this FuseLayer as guardian"):
+        contract.register_protocol("Demo vault", TARGET, "BALANCED")
+
+
+def test_registration_requires_target_authorization(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = direct_deploy("contracts/fuse_layer.py")
+    direct_vm.sender = direct_alice
+    _authorize_target(contract, direct_bob)
+    with direct_vm.expect_revert("Wallet is not authorized by the target contract"):
+        contract.register_protocol("Demo vault", TARGET, "BALANCED")
+
+
+def test_target_cannot_be_registered_twice(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy("contracts/fuse_layer.py")
+    direct_vm.sender = direct_alice
+    _authorize_target(contract, direct_alice)
+    contract.register_protocol("Demo vault", TARGET, "BALANCED")
+    with direct_vm.expect_revert("Target contract is already registered"):
+        contract.register_protocol("Duplicate vault", TARGET, "SAFETY_FIRST")
 
 
 def test_invalid_profile_and_address_revert(direct_vm, direct_deploy, direct_alice):

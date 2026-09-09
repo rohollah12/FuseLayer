@@ -15,6 +15,35 @@ The point is to avoid treating every incident as a reason to stop the whole prot
 
 Recovery is handled separately. Once a fix is submitted and verified, the contract lowers containment one level at a time instead of jumping straight back to normal operation.
 
+## Reviewer quick start
+
+You do not need to deploy anything just to see what FuseLayer does.
+
+**Wallet note:** the live write flow is currently tested with MetaMask. Rabby is not supported in this build; in our testing it fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The **Try demo** preview does not require a wallet.
+
+**Fastest check:** open the live site and click **Try demo**. It runs the incident preview without a wallet and without changing on-chain state.
+
+**Live on-chain check:** use the deployed FuseLayer/DemoVault addresses and protocol ID included with the submission. Incident reporting and incident evaluation are public, so a reviewer can inspect or exercise that flow without registering a new target.
+
+**Full reproduction:** if you want to verify the registration and guardian security from scratch, deploy the included `demo_vault.py` with FuseLayer as its guardian, call `authorize_registration(<your wallet>)` from the DemoVault owner account, then register that vault from the web app. This extra authorization step is intentional: FuseLayer must not be able to attach itself to an arbitrary contract without the target opting in.
+
+```text
+Quick preview
+site -> Try demo
+
+Live demo
+use supplied FuseLayer + DemoVault + protocol ID
+-> report / evaluate incident
+-> inspect containment
+
+Full reproduction
+deploy FuseLayer
+-> deploy DemoVault with FuseLayer as guardian
+-> authorize registration wallet
+-> register target
+-> report / evaluate
+```
+
 ## Repository
 
 ```text
@@ -34,7 +63,9 @@ There are two flows in the web app.
 
 **Preview** does not need a wallet. It calls `preview_incident` through `simulateWriteContract` using the demo evidence in this repo.
 
-**Live mode** needs a wallet. A protocol owner registers a target contract with:
+**Live mode** needs a wallet. For this build, use MetaMask for live transactions. Registration is opt-in from the target contract: the target must expose FuseLayer registration authorization and authorize the wallet before `register_protocol` will accept it. A target can only be registered once.
+
+The registration form uses:
 
 - protocol name
 - target contract address
@@ -97,7 +128,11 @@ If a new incident reaches the same safety level but affects another component, F
 
 ### DemoVault
 
-`contracts/demo_vault.py` is only here to make the controller behavior visible in Studio and in tests. FuseLayer is set as its guardian. `apply_containment`, `apply_recovery`, and `can_withdraw` make the safety levels easy to verify.
+`contracts/demo_vault.py` is only here to make the controller behavior visible in Studio and in tests. FuseLayer is set as its guardian. The vault owner can call `authorize_registration(address)` to choose the wallet that may register the vault with FuseLayer. `get_fuselayer_registration()` exposes that authorization for FuseLayer to verify.
+
+This closes the duplicate/unauthorized registration path: another wallet cannot point a second FuseLayer protocol record at the vault, and a target that does not recognize the deployed FuseLayer as its guardian is rejected.
+
+`apply_containment`, `apply_recovery`, and `can_withdraw` make the safety levels easy to verify.
 
 ## Storage
 
@@ -113,6 +148,9 @@ Recovery requests follow the same pattern.
 - duplicate URLs are rejected
 - expected contract failures use `gl.vm.UserError`
 - unconfirmed incidents never trigger containment
+- target registration must be authorized by the target contract
+- a target contract can only be registered once
+- the target must identify this FuseLayer deployment as its guardian
 - recovery can only lower the safety level one step
 - stale recovery requests are rejected
 
@@ -145,7 +183,7 @@ GitHub Actions runs the same contract checks plus the frontend build on every pu
 
 The full setup is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-In short: deploy `fuse_layer.py`, deploy `demo_vault.py` with the FuseLayer address as guardian, register the DemoVault, then set the FuseLayer address in Vercel and deploy the Next.js app.
+In short: deploy `fuse_layer.py`, deploy `demo_vault.py` with the FuseLayer address as guardian, authorize the wallet that will register the vault, register it once, then set the FuseLayer address in Vercel and deploy the Next.js app.
 
 The preview uses the raw demo files from `rohollah12/FuseLayer`. If the repository name changes, update `REPO_RAW` in `app/page.tsx`.
 
