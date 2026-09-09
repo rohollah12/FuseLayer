@@ -277,3 +277,157 @@ select:focus {
   .resultList > div { grid-template-columns: 90px 1fr; }
   .levelsTable th { width: 100px; }
 }
+
+.stepTitle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.stepTitle span {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-dark);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepTitle h3 { margin: 0; }
+
+.stepInfo {
+  margin: 0 0 18px;
+  padding: 11px 12px;
+  border-left: 3px solid var(--border-dark);
+  background: #fafaf8;
+  color: #4c4f52;
+  font-size: 13px;
+}
+
+.stepInfo p { margin: 0 0 7px; }
+.stepInfo p:last-child { margin-bottom: 0; }
+.stepInfo code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.recoveryCard {
+  margin-top: 16px;
+}
+
+.stepInfoWide {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.stepInfoWide p {
+  margin: 0;
+}
+
+.recoveryFields {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.recoveryFields label { margin-top: 0; }
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.formCard .buttonRow .button { margin-top: 0; }
+
+.recoveryResult {
+  margin: 14px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.recoveryResult > div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #ecece9;
+}
+
+.recoveryResult dt { color: var(--muted); }
+.recoveryResult dd { margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .stepInfoWide,
+  .recoveryFields { grid-template-columns: 1fr; }
+}
+
+.vaultStateCard {
+  margin-top: 16px;
+  border: 1px solid var(--border-dark);
+  background: #fbfbf9;
+  border-radius: 5px;
+  padding: 16px 18px;
+}
+
+.vaultStateHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vaultStateHeader h3 { margin: 0; }
+.vaultStateHeader p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.vaultPending { margin-top: 12px; }
+.vaultReadNote {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vaultStateGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 14px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.vaultStateGrid > div {
+  min-width: 0;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid #ecece9;
+}
+
+.vaultStateGrid dt {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.vaultStateGrid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .vaultStateGrid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 480px) {
+  .vaultStateHeader { flex-direction: column; }
+  .vaultStateGrid { grid-template-columns: 1fr; }
+}

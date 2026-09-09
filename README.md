@@ -13,7 +13,7 @@ FuseLayer does not let the model choose the action directly. The agreed result i
 
 The point is to avoid treating every incident as a reason to stop the whole protocol. A local withdrawal issue can isolate withdrawals, while a critical protocol-wide incident can still trigger a full halt.
 
-Recovery is owner-initiated. The protocol owner calls `request_recovery()` with the current incident, a short fix summary, and evidence URLs. Anyone can then call `evaluate_recovery()`. GenLayer checks whether the original issue was actually addressed and whether it is safe to restore service. If verified, FuseLayer calls the target contract and lowers containment by exactly one level: `HALT -> ISOLATE -> RESTRICT -> NONE`. A new verified recovery request is required for each further step.
+Recovery is owner-initiated. The protocol owner calls `request_recovery()` with the current incident, a short fix summary, and evidence URLs. Anyone can then call `evaluate_recovery()`: GenLayer checks whether the original issue was actually addressed and whether it is safe to restore service. If verified, FuseLayer calls the target contract and lowers containment by exactly one level: `HALT -> ISOLATE -> RESTRICT -> NONE`. A new verified recovery request is required for each further step.
 
 ## Reviewer quick start
 

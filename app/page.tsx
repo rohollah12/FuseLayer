@@ -5,6 +5,15 @@ import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
 import { TransactionStatus } from 'genlayer-js/types';
 
+type VaultSafetyState = {
+  level: number;
+  action: string;
+  component: string;
+  lastReference: string;
+  guardian: string;
+  canWithdraw10: boolean;
+};
+
 type IncidentResult = {
   profile?: string;
   status?: string;
@@ -25,6 +34,9 @@ const DEMO_EVIDENCE = [
   `${REPO_RAW}/active-incident.md`,
   `${REPO_RAW}/monitoring-snapshot.md`,
 ];
+const RECOVERY_EVIDENCE = `${REPO_RAW}/recovery-evidence.md`;
+const DEFAULT_FIX_SUMMARY =
+  'The withdrawal authorization issue has been patched. The original unauthorized withdrawal reproduction now fails, authorized withdrawals still work, and unrelated functionality remains available.';
 
 const profileCopy: Record<string, string> = {
   BALANCED: 'Use a narrow response when possible. Reserve a full halt for critical protocol-wide incidents.',
@@ -97,10 +109,28 @@ export default function Page() {
   const [latestIncidentId, setLatestIncidentId] = useState('');
   const [reportMessage, setReportMessage] = useState('');
 
+  const [recoveryIncidentId, setRecoveryIncidentId] = useState('');
+  const [fixSummary, setFixSummary] = useState(DEFAULT_FIX_SUMMARY);
+  const [recoveryEvidenceText, setRecoveryEvidenceText] = useState(RECOVERY_EVIDENCE);
+  const [requestingRecovery, setRequestingRecovery] = useState(false);
+  const [evaluatingRecovery, setEvaluatingRecovery] = useState(false);
+  const [latestRecoveryId, setLatestRecoveryId] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [recoveryResult, setRecoveryResult] = useState<{ status: string; targetLevel: number; targetAction: string; summary: string } | null>(null);
+
+  const [vaultState, setVaultState] = useState<VaultSafetyState | null>(null);
+  const [vaultLoading, setVaultLoading] = useState(false);
+  const [vaultStatusMessage, setVaultStatusMessage] = useState('');
+  const [vaultPendingNote, setVaultPendingNote] = useState('');
+
   const contractAddress = process.env.NEXT_PUBLIC_FUSELAYER_CONTRACT_ADDRESS ?? '';
   const evidence = useMemo(
     () => evidenceText.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3),
     [evidenceText],
+  );
+  const recoveryEvidence = useMemo(
+    () => recoveryEvidenceText.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3),
+    [recoveryEvidenceText],
   );
 
   useEffect(() => {
@@ -183,6 +213,62 @@ export default function Page() {
       throw new Error(`Wallet is on chain ${chainId}; FuseLayer is using Studionet (${STUDIONET_CHAIN_ID}).`);
     }
     return { client, account };
+  }
+
+  async function refreshVaultState(addressOverride?: string) {
+    setVaultLoading(true);
+    setVaultStatusMessage('');
+    try {
+      const { client } = await liveClient();
+      let address = (addressOverride ?? targetAddress).trim();
+
+      if (!ADDRESS_RE.test(address) && contractAddress && reportProtocolId.trim()) {
+        const protocol = (await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_protocol',
+          args: [reportProtocolId.trim()],
+        })) as { target_address?: string };
+        if (typeof protocol?.target_address === 'string' && ADDRESS_RE.test(protocol.target_address)) {
+          address = protocol.target_address;
+          setTargetAddress(address);
+        }
+      }
+
+      if (!ADDRESS_RE.test(address)) {
+        throw new Error('Enter a DemoVault address in step 1, or enter a valid Protocol ID in step 2 so the target can be resolved.');
+      }
+
+      const rawState = (await client.readContract({
+        address: address as `0x${string}`,
+        functionName: 'get_safety_state',
+        args: [],
+      })) as {
+        level?: number | string | bigint;
+        action?: string;
+        component?: string;
+        last_reference?: string;
+        guardian?: string;
+      };
+      const canWithdraw10 = (await client.readContract({
+        address: address as `0x${string}`,
+        functionName: 'can_withdraw',
+        args: [BigInt(10)],
+      })) as boolean;
+
+      setVaultState({
+        level: Number(rawState.level ?? 0),
+        action: rawState.action ?? 'NONE',
+        component: rawState.component || '—',
+        lastReference: rawState.last_reference || '—',
+        guardian: rawState.guardian ?? '—',
+        canWithdraw10: Boolean(canWithdraw10),
+      });
+      setVaultStatusMessage(`Live state read from ${address.slice(0, 6)}…${address.slice(-4)}.`);
+    } catch (error) {
+      setVaultStatusMessage(errorMessage(error, 'Could not read DemoVault state'));
+    } finally {
+      setVaultLoading(false);
+    }
   }
 
   async function registerProtocol() {
@@ -268,6 +354,8 @@ export default function Page() {
 
       setProtocolId(`Protocol ID ${createdId}`);
       setReportProtocolId(createdId);
+      setVaultPendingNote('');
+      await refreshVaultState(cleanTarget);
     } catch (error) {
       setWalletError(errorMessage(error, 'Registration failed'));
     } finally {
@@ -363,7 +451,7 @@ export default function Page() {
         address: contractAddress as `0x${string}`,
         functionName: 'get_incident',
         args: [latestIncidentId],
-      })) as { status?: string; action?: string; severity?: string; component?: string };
+      })) as { status?: string; action?: string; action_level?: number | string; severity?: string; component?: string };
 
       if (!incident?.status || incident.status === 'PENDING') {
         throw new Error(failedWriteMessage('Incident evaluation', tx, receipt));
@@ -372,10 +460,173 @@ export default function Page() {
       setReportMessage(
         `Incident ${latestIncidentId}: ${incident.status} · ${incident.severity ?? ''} · ${incident.component ?? ''} · action ${incident.action ?? ''}`
       );
+      const actionLevel = Number((incident as { action_level?: number | string }).action_level ?? 0);
+      if (actionLevel > 0) {
+        setRecoveryIncidentId(latestIncidentId);
+        setVaultPendingNote(
+          `FuseLayer scheduled ${incident.action ?? 'containment'} for DemoVault. The target message is applied after finalization, so the live state can lag behind the incident result for a short time.`
+        );
+      } else {
+        setVaultPendingNote('No containment change was scheduled for this incident.');
+      }
+      await refreshVaultState();
     } catch (error) {
       setReportMessage(errorMessage(error, 'Incident evaluation failed'));
     } finally {
       setEvaluating(false);
+    }
+  }
+
+  async function requestRecovery() {
+    const cleanIncidentId = recoveryIncidentId.trim();
+    const cleanFix = fixSummary.trim();
+    if (!contractAddress) {
+      setRecoveryMessage('Contract address is not configured.');
+      return;
+    }
+    if (!cleanIncidentId) {
+      setRecoveryMessage('Enter the incident ID that currently caused containment.');
+      return;
+    }
+    if (cleanFix.length < 20) {
+      setRecoveryMessage('Fix summary must be at least 20 characters.');
+      return;
+    }
+    if (recoveryEvidence.length < 1) {
+      setRecoveryMessage('Add at least one recovery evidence URL.');
+      return;
+    }
+
+    setRequestingRecovery(true);
+    setRecoveryMessage('');
+    setLatestRecoveryId('');
+    setRecoveryResult(null);
+    try {
+      const { client, account } = await liveClient();
+      const beforeCounts = (await client.readContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'get_counts',
+        args: [],
+      })) as { recoveries?: number | bigint | string };
+      const before = countValue(beforeCounts.recoveries);
+
+      const tx = await client.writeContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'request_recovery',
+        args: [cleanIncidentId, cleanFix, JSON.stringify(recoveryEvidence)],
+        value: BigInt(0),
+      });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: tx,
+        status: TransactionStatus.ACCEPTED,
+        interval: 5000,
+        retries: 120,
+      });
+
+      const afterCounts = (await client.readContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'get_counts',
+        args: [],
+      })) as { recoveries?: number | bigint | string };
+      const after = countValue(afterCounts.recoveries);
+
+      let createdId = '';
+      let createdRecovery: { status?: string; target_level?: number | string; target_action?: string } | null = null;
+      const scanEnd = after < before + 25n ? after : before + 25n;
+      for (let id = before + 1n; id <= scanEnd; id += 1n) {
+        const recovery = (await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_recovery',
+          args: [id.toString()],
+        })) as {
+          incident_id?: string;
+          requester?: string;
+          status?: string;
+          target_level?: number | string;
+          target_action?: string;
+        };
+        if (
+          recovery?.incident_id === cleanIncidentId &&
+          recovery?.requester?.toLowerCase() === account.toLowerCase()
+        ) {
+          createdId = id.toString();
+          createdRecovery = recovery;
+          break;
+        }
+      }
+
+      if (!createdId) {
+        throw new Error(failedWriteMessage('Recovery request', tx, receipt));
+      }
+
+      setLatestRecoveryId(createdId);
+      setRecoveryMessage(
+        `Recovery ${createdId} created with status ${createdRecovery?.status ?? 'PENDING'}. Anyone can now evaluate it.`
+      );
+    } catch (error) {
+      setRecoveryMessage(errorMessage(error, 'Recovery request failed'));
+    } finally {
+      setRequestingRecovery(false);
+    }
+  }
+
+  async function evaluateLatestRecovery() {
+    if (!contractAddress || !latestRecoveryId) return;
+    setEvaluatingRecovery(true);
+    setRecoveryMessage('');
+    setRecoveryResult(null);
+    try {
+      const { client } = await liveClient();
+      const tx = await client.writeContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'evaluate_recovery',
+        args: [latestRecoveryId],
+        value: BigInt(0),
+      });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: tx,
+        status: TransactionStatus.ACCEPTED,
+        interval: 5000,
+        retries: 120,
+      });
+      const recovery = (await client.readContract({
+        address: contractAddress as `0x${string}`,
+        functionName: 'get_recovery',
+        args: [latestRecoveryId],
+      })) as {
+        status?: string;
+        target_level?: number | string;
+        target_action?: string;
+        summary?: string;
+      };
+
+      if (!recovery?.status || recovery.status === 'PENDING') {
+        throw new Error(failedWriteMessage('Recovery evaluation', tx, receipt));
+      }
+
+      const targetLevel = Number(recovery.target_level ?? 0);
+      const targetAction = recovery.target_action ?? 'NONE';
+      setRecoveryResult({
+        status: recovery.status,
+        targetLevel,
+        targetAction,
+        summary: recovery.summary ?? '',
+      });
+      setRecoveryMessage(
+        `Recovery ${latestRecoveryId}: ${recovery.status} · target level ${targetLevel} (${targetAction})`
+      );
+      if (recovery.status === 'RESTORE_SCHEDULED') {
+        setVaultPendingNote(
+          `FuseLayer scheduled recovery to ${targetAction}. DemoVault applies that change after finalization; refresh the live state to confirm when it lands.`
+        );
+      } else {
+        setVaultPendingNote(`Recovery ${latestRecoveryId} did not schedule a DemoVault state change.`);
+      }
+      await refreshVaultState();
+    } catch (error) {
+      setRecoveryMessage(errorMessage(error, 'Recovery evaluation failed'));
+    } finally {
+      setEvaluatingRecovery(false);
     }
   }
 
@@ -459,13 +710,18 @@ export default function Page() {
           <div className="sectionHeading simple">
             <div>
               <h2>Live contract</h2>
-              <p>Register a target contract, then submit an incident against its protocol ID. Live writes are currently tested with MetaMask.</p>
+              <p>Three on-chain steps: register protection, report/evaluate an incident, then request recovery when a fix is ready. Live writes are currently tested with MetaMask.</p>
             </div>
           </div>
 
           <div className="formsGrid">
             <form className="formCard" onSubmit={(e) => { e.preventDefault(); registerProtocol(); }}>
-              <h3>Register contract</h3>
+              <div className="stepTitle"><span>1</span><h3>Register contract</h3></div>
+              <div className="stepInfo">
+                <p><strong>Who:</strong> only a wallet explicitly authorized by the target contract. In DemoVault, the vault owner calls <code>authorize_registration(wallet)</code> first.</p>
+                <p><strong>What happens:</strong> FuseLayer verifies the target recognizes this FuseLayer as guardian, verifies the wallet authorization, and rejects duplicate target registrations.</p>
+                <p><strong>Output:</strong> a Protocol ID. The registering wallet becomes the FuseLayer protocol owner and is the only wallet allowed to request recovery later.</p>
+              </div>
 
               <label htmlFor="protocol-name">Protocol name</label>
               <input
@@ -483,9 +739,6 @@ export default function Page() {
                 placeholder="0x…"
                 spellCheck={false}
               />
-              <p className="help">
-                The target must authorize this wallet first. For DemoVault, call authorize_registration(wallet) from the vault owner account in Studio.
-              </p>
 
               <label htmlFor="live-profile">Response profile</label>
               <select id="live-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
@@ -493,17 +746,23 @@ export default function Page() {
                 <option value="SAFETY_FIRST">Safety first</option>
                 <option value="AVAILABILITY_FIRST">Availability first</option>
               </select>
+              <p className="help">{profileCopy[profile]}</p>
 
               <button className="button buttonPrimary" type="submit" disabled={registering}>
                 {registering ? 'Registering…' : 'Register'}
               </button>
 
-              {protocolId && <div className="message success">{protocolId}</div>}
+              {protocolId && <div className="message success"><strong>Registration output:</strong> {protocolId}</div>}
               {walletError && <div className="message error">{walletError}</div>}
             </form>
 
             <form className="formCard" onSubmit={(e) => { e.preventDefault(); reportIncident(); }}>
-              <h3>Report incident</h3>
+              <div className="stepTitle"><span>2</span><h3>Report and evaluate incident</h3></div>
+              <div className="stepInfo">
+                <p><strong>Who can report:</strong> anyone. A researcher, user, monitor, or protocol team can submit evidence.</p>
+                <p><strong>Who can evaluate:</strong> anyone. Evaluation asks GenLayer validators to classify the incident, then FuseLayer deterministically maps that result to NONE, RESTRICT, ISOLATE, or HALT.</p>
+                <p><strong>Output:</strong> reporting returns an Incident ID. Evaluation returns the stored status, severity, affected component, scope, and containment action. Target containment is sent after finalization.</p>
+              </div>
 
               <label htmlFor="protocol-id">Protocol ID</label>
               <input
@@ -545,9 +804,104 @@ export default function Page() {
                 </button>
               )}
 
-              {reportMessage && <div className="message info">{reportMessage}</div>}
+              {reportMessage && <div className="message info"><strong>Incident output:</strong> {reportMessage}</div>}
             </form>
           </div>
+
+          <div className="vaultStateCard">
+            <div className="vaultStateHeader">
+              <div>
+                <h3>DemoVault live state</h3>
+                <p>This reads the protected contract itself, not FuseLayer's stored incident result.</p>
+              </div>
+              <button className="button buttonSmall" type="button" onClick={() => refreshVaultState()} disabled={vaultLoading}>
+                {vaultLoading ? 'Refreshing…' : 'Refresh status'}
+              </button>
+            </div>
+
+            {vaultPendingNote && <div className="message info vaultPending">{vaultPendingNote}</div>}
+            {!vaultState && !vaultStatusMessage && (
+              <p className="quiet">Register a DemoVault, or enter an existing Protocol ID, then refresh to read its current safety state.</p>
+            )}
+            {vaultStatusMessage && <p className="vaultReadNote">{vaultStatusMessage}</p>}
+            {vaultState && (
+              <dl className="vaultStateGrid">
+                <ResultRow label="Level" value={String(vaultState.level)} />
+                <ResultRow label="Action" value={vaultState.action} strong />
+                <ResultRow label="Component" value={vaultState.component} />
+                <ResultRow label="Last reference" value={vaultState.lastReference} />
+                <ResultRow label="Withdraw 10" value={vaultState.canWithdraw10 ? 'ALLOWED' : 'BLOCKED'} strong={!vaultState.canWithdraw10} />
+                <ResultRow label="Guardian" value={vaultState.guardian} />
+              </dl>
+            )}
+          </div>
+
+          <form className="formCard recoveryCard" onSubmit={(e) => { e.preventDefault(); requestRecovery(); }}>
+            <div className="stepTitle"><span>3</span><h3>Request and evaluate recovery</h3></div>
+            <div className="stepInfo stepInfoWide">
+              <p><strong>Who can request:</strong> only the protocol owner from step 1. The protocol must currently be contained, and the request must reference the incident that caused the current containment.</p>
+              <p><strong>Who can evaluate:</strong> anyone. GenLayer checks whether the original issue was actually addressed and whether it is safe to restore service.</p>
+              <p><strong>Output:</strong> the request returns a Recovery ID. If verification succeeds, containment drops by exactly one level — HALT → ISOLATE → RESTRICT → NONE. Weak evidence can return NO_CHANGE instead.</p>
+            </div>
+
+            <div className="recoveryFields">
+              <div>
+                <label htmlFor="recovery-incident-id">Current containment incident ID</label>
+                <input
+                  id="recovery-incident-id"
+                  value={recoveryIncidentId}
+                  onChange={(e) => setRecoveryIncidentId(e.target.value)}
+                  placeholder="1"
+                />
+              </div>
+              <div>
+                <label htmlFor="fix-summary">What was fixed?</label>
+                <textarea
+                  id="fix-summary"
+                  value={fixSummary}
+                  onChange={(e) => setFixSummary(e.target.value)}
+                  rows={4}
+                />
+              </div>
+              <div>
+                <label htmlFor="recovery-evidence">Recovery evidence URLs <span className="optional">(1–3, one per line)</span></label>
+                <textarea
+                  id="recovery-evidence"
+                  value={recoveryEvidenceText}
+                  onChange={(e) => setRecoveryEvidenceText(e.target.value)}
+                  rows={4}
+                  spellCheck={false}
+                />
+                <p className="help">Use concrete evidence where possible: test output, change/commit details, or independent proof that the original exploit no longer reproduces.</p>
+              </div>
+            </div>
+
+            <div className="buttonRow">
+              <button className="button buttonPrimary" type="submit" disabled={requestingRecovery}>
+                {requestingRecovery ? 'Requesting…' : 'Request recovery'}
+              </button>
+              {latestRecoveryId && (
+                <button
+                  className="button"
+                  type="button"
+                  onClick={evaluateLatestRecovery}
+                  disabled={evaluatingRecovery}
+                >
+                  {evaluatingRecovery ? 'Evaluating…' : `Evaluate recovery ${latestRecoveryId}`}
+                </button>
+              )}
+            </div>
+
+            {recoveryMessage && <div className="message info"><strong>Recovery output:</strong> {recoveryMessage}</div>}
+            {recoveryResult && (
+              <dl className="recoveryResult">
+                <ResultRow label="Status" value={recoveryResult.status} />
+                <ResultRow label="Target level" value={String(recoveryResult.targetLevel)} />
+                <ResultRow label="Target action" value={recoveryResult.targetAction} strong />
+                {recoveryResult.summary && <ResultRow label="Reason" value={recoveryResult.summary} />}
+              </dl>
+            )}
+          </form>
         </section>
 
         <section className="section compactSection">

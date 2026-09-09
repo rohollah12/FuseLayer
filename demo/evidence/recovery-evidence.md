@@ -1,27 +1,17 @@
-# DemoVault recovery evidence
+# DemoVault recovery verification
 
-This is synthetic evidence for the FuseLayer hackathon demo.
+Synthetic verification fixture for the FuseLayer hackathon demo. It represents the post-fix checks for the withdrawal incident used by the sample flow.
 
-The withdrawal authorization issue described in incident 1 has been fixed.
+## Fix applied
 
-Changes made:
-- The affected withdrawal authorization branch was replaced.
-- Withdrawals now require the expected authorization check before execution.
-- The original unauthorized-withdrawal reproduction no longer succeeds.
+The withdrawal authorization path used by the reported exploit was replaced with the corrected authorization check. The change is limited to the WITHDRAWALS component; unrelated protocol functions were not changed.
 
-Verification:
-- Test: unauthorized withdrawal attempt
-  Result: REJECTED
+## Post-fix checks
 
-- Test: authorized withdrawal of 10 units
-  Result: ALLOWED
+- Original unauthorized-withdrawal reproduction: **REJECTED**
+- Repeated unauthorized withdrawal attempts (25 runs): **0 successful**
+- Normal authorized withdrawal path: **PASSED**
+- Unaffected protocol operations: **PASSED**
+- Post-fix monitoring sample: **no recurrence of the reported withdrawal pattern**
 
-- Test: original exploit reproduction
-  Result: REJECTED
-
-- Test: unrelated protocol functionality
-  Result: AVAILABLE
-
-The affected component was WITHDRAWALS and the incident was LOCAL. No other component required changes.
-
-Based on these checks, the original withdrawal exploit condition is no longer reproducible and the protocol can safely move from ISOLATE to RESTRICT.
+The original incident was local to WITHDRAWALS. These checks support reducing containment by one step from ISOLATE to RESTRICT. They do not claim that all protection should be removed in a single recovery action.

@@ -1,6 +1,6 @@
 # Deployment
 
-This is the full reproduction path. A reader does not need to go through all of it just to understand the project.
+This is the full reproduction path. A reviewer does not need to go through all of it just to understand the project.
 
 ## Reviewer paths
 
@@ -16,7 +16,7 @@ Use the FuseLayer address, DemoVault address, and protocol ID supplied with the 
 
 **3. Reproduce everything from scratch**
 
-Follow the steps below. The included `demo_vault.py` is the test target. There is no need to write a new contract. The only extra security step is authorizing the wallet that will register the vault.
+Follow the steps below. The included `demo_vault.py` is the test target; there is no need to write a new contract. The only extra security step is authorizing the wallet that will register the vault.
 
 ---
 
@@ -272,5 +272,19 @@ ISOLATE -> RESTRICT
 
 A second verified recovery can continue toward `NONE`.
 
+## Before submitting
+
+Keep these ready:
+
+```text
+GitHub repository URL
+Vercel URL
+FuseLayer contract address
+DemoVault contract address
+registered demo protocol ID
+GitHub Actions run URL
+```
 
 The hackathon build is free. There is no checkout or payment setup to configure.
+
+For the submission itself, provide the already deployed addresses and protocol ID so reviewers can start with the live demo. Full deployment from scratch should be optional, not the first thing they have to do.
