@@ -8,7 +8,7 @@ There are three useful ways to check FuseLayer. For live wallet transactions, us
 
 **1. Preview only**
 
-Open the deployed web app and click **Try demo**. No wallet, registration, or deployment is required. This shows the incident classification and containment decision without writing state.
+Open the deployed web app and click **Run sample**. No wallet, registration, or deployment is required. This shows the incident classification and containment decision without writing state.
 
 **2. Check the deployed demo**
 
@@ -115,7 +115,7 @@ Call:
 authorize_registration
 ```
 
-Set `registrant_address` to the MetaMask address you will use on the FuseLayer site. The current live flow is tested with MetaMask; use the wallet-free **Try demo** path if you do not want to connect a wallet.
+Set `registrant_address` to the MetaMask address you will use on the FuseLayer site. The current live flow is tested with MetaMask; use the wallet-free **Run sample** path if you do not want to connect a wallet.
 
 Then check:
 
@@ -232,7 +232,7 @@ Deploy the project.
 
 ## 10. Check the preview
 
-Open the Vercel site and click **Try demo**.
+Open the Vercel site and click **Run sample**.
 
 This path does not need a wallet and does not write state. The expected action for the included demo is `ISOLATE`.
 
@@ -242,7 +242,9 @@ If the preview cannot load evidence, check that the GitHub repo is public and th
 
 Connect the same browser wallet that DemoVault authorized in step 5.
 
-Register the contract with:
+If you already registered DemoVault in step 6, **do not register it again**. Enter the existing protocol ID in the incident form, submit an incident, and evaluate it from the same page.
+
+If you intentionally skipped registration in step 6, register DemoVault once from the web app with:
 
 ```text
 Protocol name: My protocol
@@ -250,7 +252,7 @@ Protected contract: <DEMOVAULT_ADDRESS>
 Safety profile: Balanced
 ```
 
-After registration, use the returned protocol ID to submit an incident. Then evaluate the incident from the same page.
+Then use the returned protocol ID for the incident flow.
 
 ## 12. Recovery test (optional)
 

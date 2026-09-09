@@ -402,7 +402,7 @@ export default function Page() {
         <section className="intro">
           <h1>FuseLayer</h1>
           <p>
-            Submit evidence for a contract incident and choose how aggressively the protected contract should respond.
+            Register a contract with a response profile, then submit incident evidence.
             FuseLayer can restrict one area, isolate a component, or halt the whole target when necessary.
           </p>
         </section>
@@ -459,7 +459,7 @@ export default function Page() {
           <div className="sectionHeading simple">
             <div>
               <h2>Live contract</h2>
-              <p>Register a target contract, then submit an incident against its protocol ID.</p>
+              <p>Register a target contract, then submit an incident against its protocol ID. Live writes are currently tested with MetaMask.</p>
             </div>
           </div>
 

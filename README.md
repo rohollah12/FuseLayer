@@ -19,9 +19,9 @@ Recovery is owner-initiated. The protocol owner calls `request_recovery()` with 
 
 You do not need to deploy anything just to see what FuseLayer does.
 
-**Wallet note:** the live write flow is currently tested with MetaMask. Rabby is not supported in this build; in our testing it fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The **Try demo** preview does not require a wallet.
+**Wallet note:** the live write flow is currently tested with MetaMask. Rabby is not supported in this build; in our testing it fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The **Run sample** preview does not require a wallet.
 
-**Fastest check:** open the live site and click **Try demo**. It runs the incident preview without a wallet and without changing on-chain state.
+**Fastest check:** open the live site and click **Run sample**. It runs the incident preview without a wallet and without changing on-chain state.
 
 **Live on-chain check:** use the deployed FuseLayer/DemoVault addresses and protocol ID included with the submission. Incident reporting and incident evaluation are public, so a reviewer can inspect or exercise that flow without registering a new target.
 
@@ -29,7 +29,7 @@ You do not need to deploy anything just to see what FuseLayer does.
 
 ```text
 Quick preview
-site -> Try demo
+site -> Run sample
 
 Live demo
 use supplied FuseLayer + DemoVault + protocol ID
