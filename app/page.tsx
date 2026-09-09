@@ -215,11 +215,31 @@ export default function Page() {
     return { client, account };
   }
 
+  function publicClient() {
+    return createClient({ chain: studionet });
+  }
+
+  async function findProtocolByTarget(client: ReturnType<typeof createClient>, target: string, total: bigint) {
+    for (let id = 1n; id <= total; id += 1n) {
+      try {
+        const protocol = (await client.readContract({
+          address: contractAddress as `0x${string}`,
+          functionName: 'get_protocol',
+          args: [id.toString()],
+        })) as { id?: string; target_address?: string; owner?: string; name?: string; profile?: string };
+        if (protocol?.target_address?.toLowerCase() === target.toLowerCase()) return protocol;
+      } catch {
+        // Protocol ids are sequential, but ignore a stale read and keep scanning.
+      }
+    }
+    return null;
+  }
+
   async function refreshVaultState(addressOverride?: string) {
     setVaultLoading(true);
     setVaultStatusMessage('');
     try {
-      const { client } = await liveClient();
+      const client = publicClient();
       let address = (addressOverride ?? targetAddress).trim();
 
       if (!ADDRESS_RE.test(address) && contractAddress && reportProtocolId.trim()) {
@@ -295,10 +315,11 @@ export default function Page() {
     setWalletError('');
     setProtocolId('');
     try {
-      const { client, account } = await liveClient();
+      const { client: writeClient, account } = await liveClient();
+      const readClient = publicClient();
       let beforeCounts: { protocols?: number | bigint | string };
       try {
-        beforeCounts = (await client.readContract({
+        beforeCounts = (await readClient.readContract({
           address: contractAddress as `0x${string}`,
           functionName: 'get_counts',
           args: [],
@@ -308,44 +329,48 @@ export default function Page() {
       }
 
       const before = countValue(beforeCounts.protocols);
-      const tx = await client.writeContract({
+      const existing = await findProtocolByTarget(readClient, cleanTarget, before);
+      if (existing?.id) {
+        setProtocolId(`Protocol ID ${existing.id} (already registered)`);
+        setReportProtocolId(existing.id);
+        setWalletError('This target is already registered. FuseLayer allows each protected contract to be registered only once. Reusing the existing Protocol ID instead.');
+        setVaultPendingNote('');
+        await refreshVaultState(cleanTarget);
+        return;
+      }
+
+      const tx = await writeClient.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'register_protocol',
         args: [cleanName, cleanTarget, profile],
         value: BigInt(0),
       });
-      const receipt = await client.waitForTransactionReceipt({
+      const receipt = await writeClient.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
         interval: 5000,
         retries: 120,
       });
 
-      const afterCounts = (await client.readContract({
-        address: contractAddress as `0x${string}`,
-        functionName: 'get_counts',
-        args: [],
-      })) as { protocols?: number | bigint | string };
-      const after = countValue(afterCounts.protocols);
+      const receiptInfo = receipt as { txExecutionResultName?: string };
+      if (receiptInfo.txExecutionResultName && receiptInfo.txExecutionResultName !== 'FINISHED_WITH_RETURN') {
+        throw new Error(`Registration was rejected by the contract (${receiptInfo.txExecutionResultName}). Check that this wallet is authorized by DemoVault, the DemoVault guardian is this FuseLayer address, and the target is not already registered. Transaction: ${tx}`);
+      }
 
       let createdId = '';
-      const scanEnd = after < before + 25n ? after : before + 25n;
-      for (let id = before + 1n; id <= scanEnd; id += 1n) {
-        const protocol = (await client.readContract({
+      for (let attempt = 0; attempt < 12 && !createdId; attempt += 1) {
+        const afterCounts = (await readClient.readContract({
           address: contractAddress as `0x${string}`,
-          functionName: 'get_protocol',
-          args: [id.toString()],
-        })) as { owner?: string; name?: string; target_address?: string; profile?: string };
-
-        if (
-          protocol?.owner?.toLowerCase() === account.toLowerCase() &&
-          protocol?.name === cleanName &&
-          protocol?.target_address?.toLowerCase() === cleanTarget.toLowerCase() &&
-          protocol?.profile === profile
-        ) {
-          createdId = id.toString();
+          functionName: 'get_counts',
+          args: [],
+        })) as { protocols?: number | bigint | string };
+        const after = countValue(afterCounts.protocols);
+        const protocol = await findProtocolByTarget(readClient, cleanTarget, after);
+        if (protocol?.id && protocol.owner?.toLowerCase() === account.toLowerCase()) {
+          createdId = protocol.id;
           break;
         }
+        if (attempt < 11) await new Promise((resolve) => setTimeout(resolve, 2500));
       }
 
       if (!createdId) {
