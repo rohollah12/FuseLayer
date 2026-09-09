@@ -16,7 +16,7 @@ Use the FuseLayer address, DemoVault address, and protocol ID supplied with the 
 
 **3. Reproduce everything from scratch**
 
-Follow the steps below. The included `demo_vault.py` is the test target; there is no need to write a new contract. The only extra security step is authorizing the wallet that will register the vault.
+Follow the steps below. The included `demo_vault.py` is the test target. There is no need to write a new contract. The only extra security step is authorizing the wallet that will register the vault.
 
 ---
 
