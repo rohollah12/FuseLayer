@@ -25,24 +25,25 @@ You do not need to deploy anything just to see what FuseLayer does.
 
 **Wallet note:** the live write flow is currently tested with MetaMask. Rabby is not supported in this build; in our testing it fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The **Run sample** preview does not require a wallet.
 
-**Fastest check:** open the live site and click **Run sample**. It runs the incident preview without a wallet and without changing on-chain state.
-**Live on-chain check:** use the deployed FuseLayer/DemoVault addresses and protocol ID included with the submission. Incident reporting and incident evaluation are public, so a reviewer can inspect or exercise that flow without registering a new target.
-**Full reproduction:** if you want to verify the registration and guardian security from scratch, deploy the included `demo_vault.py` with FuseLayer as its guardian, call `authorize_registration(<your wallet>)` from the DemoVault owner account, then register that vault from the web app. This extra authorization step is intentional: FuseLayer must not be able to attach itself to an arbitrary contract without the target opting in.
+- **Fastest check:** open the live site and click **Run sample**. It runs the incident preview without a wallet and without changing on-chain state.
+- **Live on-chain check:** use the deployed FuseLayer/DemoVault addresses and protocol ID included with the submission. Incident reporting and incident evaluation are public, so a reviewer can inspect or exercise that flow without registering a new target.
+- **Full reproduction:** to verify registration and guardian security from scratch, deploy the included `demo_vault.py` with FuseLayer as its guardian, call `authorize_registration(<your wallet>)` from the DemoVault owner account, then register that vault from the web app. This extra authorization step is intentional: FuseLayer must not be able to attach itself to an arbitrary contract without the target opting in.
 
 ```text
 Quick preview
-site -> Run sample
+  site -> Run sample
+
 Live demo
-use supplied FuseLayer + DemoVault + protocol ID
--> report / evaluate incident
--> inspect containment
+  use supplied FuseLayer + DemoVault + protocol ID
+  -> report / evaluate incident
+  -> inspect containment
 
 Full reproduction
-deploy FuseLayer
--> deploy DemoVault with FuseLayer as guardian
--> authorize registration wallet
--> register target
--> report / evaluate
+  deploy FuseLayer
+  -> deploy DemoVault with FuseLayer as guardian
+  -> authorize registration wallet
+  -> register target
+  -> report / evaluate
 ```
 
 ## Repository
