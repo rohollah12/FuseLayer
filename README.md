@@ -1,7 +1,12 @@
 # FuseLayer
 
-FuseLayer is a GenLayer controller for incident containment. A protocol registers a target contract and picks a safety profile. If an incident is reported, GenLayer checks the public evidence and agrees on five things: whether the incident is confirmed, whether it is still active, its severity, the affected component, and whether the impact is local or protocol-wide.
+> **✅ Studio-dev / Consensus v0.6 compatibility verified**
+>
+> FuseLayer was additionally validated end-to-end on GenLayer Studio-dev (**chain 61997**), including registration, incident evaluation, containment, and staged recovery.
+>
+> The Agent Tank submission and web app remain on the original stable Studionet deployment (**61999**). The 61997 contracts are compatibility-only and are kept separately in [`contracts/compat_61997/`](contracts/compat_61997/README.md).
 
+FuseLayer is a GenLayer controller for incident containment. A protocol registers a target contract and picks a safety profile. If an incident is reported, GenLayer checks the public evidence and agrees on five things: whether the incident is confirmed, whether it is still active, its severity, the affected component, and whether the impact is local or protocol-wide.
 FuseLayer does not let the model choose the action directly. The agreed result is passed through a fixed policy that returns one of these levels:
 
 ```text
@@ -12,7 +17,6 @@ FuseLayer does not let the model choose the action directly. The agreed result i
 ```
 
 The point is to avoid treating every incident as a reason to stop the whole protocol. A local withdrawal issue can isolate withdrawals, while a critical protocol-wide incident can still trigger a full halt.
-
 Recovery is owner-initiated. The protocol owner calls `request_recovery()` with the current incident, a short fix summary, and evidence URLs. Anyone can then call `evaluate_recovery()`: GenLayer checks whether the original issue was actually addressed and whether it is safe to restore service. If verified, FuseLayer calls the target contract and lowers containment by exactly one level: `HALT -> ISOLATE -> RESTRICT -> NONE`. A new verified recovery request is required for each further step.
 
 ## Reviewer quick start
@@ -22,15 +26,12 @@ You do not need to deploy anything just to see what FuseLayer does.
 **Wallet note:** the live write flow is currently tested with MetaMask. Rabby is not supported in this build; in our testing it fails on a MetaMask-specific wallet RPC call (`wallet_getSnaps`). The **Run sample** preview does not require a wallet.
 
 **Fastest check:** open the live site and click **Run sample**. It runs the incident preview without a wallet and without changing on-chain state.
-
 **Live on-chain check:** use the deployed FuseLayer/DemoVault addresses and protocol ID included with the submission. Incident reporting and incident evaluation are public, so a reviewer can inspect or exercise that flow without registering a new target.
-
 **Full reproduction:** if you want to verify the registration and guardian security from scratch, deploy the included `demo_vault.py` with FuseLayer as its guardian, call `authorize_registration(<your wallet>)` from the DemoVault owner account, then register that vault from the web app. This extra authorization step is intentional: FuseLayer must not be able to attach itself to an arbitrary contract without the target opting in.
 
 ```text
 Quick preview
 site -> Run sample
-
 Live demo
 use supplied FuseLayer + DemoVault + protocol ID
 -> report / evaluate incident
@@ -47,12 +48,16 @@ deploy FuseLayer
 ## Repository
 
 ```text
-app/                       Next.js frontend and preview API
-contracts/fuse_layer.py    main controller
-contracts/demo_vault.py    small contract used for the live demo
-demo/evidence/             synthetic incident/recovery notes
-tests/direct/              Direct Mode tests
-.github/workflows/         lint, tests and frontend build
+app/                                   Next.js frontend and preview API
+contracts/fuse_layer.py                main controller used by the stable demo
+contracts/demo_vault.py                small contract used by the stable live demo
+contracts/compat_61997/                Studio-dev 61997 compatibility validation
+  fuse_layer61997.py                   FuseLayer compatibility contract
+  demo_vault61997.py                   DemoVault compatibility contract
+  README.md                            61997 validation notes and addresses
+demo/evidence/                         synthetic incident/recovery notes
+tests/direct/                          Direct Mode tests
+.github/workflows/                     lint, tests and frontend build
 ```
 
 The hackathon version is free and has no payment code.
@@ -66,7 +71,6 @@ There are two flows in the web app.
 **Live mode** needs a wallet. For this build, use MetaMask for live transactions. Registration is opt-in from the target contract: the target must expose FuseLayer registration authorization and authorize the wallet before `register_protocol` will accept it. A target can only be registered once.
 
 The registration form uses:
-
 - protocol name
 - target contract address
 - safety profile
@@ -110,7 +114,6 @@ get_counts()
 ```
 
 Incident analysis returns:
-
 ```text
 status      CONFIRMED / UNCONFIRMED / REJECTED
 active      true / false
@@ -121,7 +124,6 @@ summary     short explanation
 ```
 
 Validators independently run the same analysis. The fields that affect containment must match.
-
 After consensus, `_derive_action` maps the result and safety profile to `NONE`, `RESTRICT`, `ISOLATE`, or `HALT`. Messages to the protected contract are sent with `on="finalized"`.
 
 If a new incident reaches the same safety level but affects another component, FuseLayer widens the protected surface instead of ignoring the second incident.
@@ -129,7 +131,6 @@ If a new incident reaches the same safety level but affects another component, F
 ### DemoVault
 
 `contracts/demo_vault.py` is only here to make the controller behavior visible in Studio and in tests. FuseLayer is set as its guardian. The vault owner can call `authorize_registration(address)` to choose the wallet that may register the vault with FuseLayer. `get_fuselayer_registration()` exposes that authorization for FuseLayer to verify.
-
 This closes the duplicate/unauthorized registration path: another wallet cannot point a second FuseLayer protocol record at the vault, and a target that does not recognize the deployed FuseLayer as its guardian is rejected.
 
 `apply_containment`, `apply_recovery`, and `can_withdraw` make the safety levels easy to verify.
@@ -141,7 +142,6 @@ A pending incident keeps the submitted claim and evidence URLs because they are 
 Recovery requests follow the same pattern.
 
 ## Input checks
-
 - one to three evidence URLs
 - `http` or `https` only
 - localhost/private targets are rejected
