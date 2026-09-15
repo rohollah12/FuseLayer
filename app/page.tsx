@@ -124,10 +124,12 @@ export default function Page() {
   const [vaultPendingNote, setVaultPendingNote] = useState('');
 
   const contractAddress = process.env.NEXT_PUBLIC_FUSELAYER_CONTRACT_ADDRESS ?? '';
+
   const evidence = useMemo(
     () => evidenceText.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3),
     [evidenceText],
   );
+
   const recoveryEvidence = useMemo(
     () => recoveryEvidenceText.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3),
     [recoveryEvidenceText],
@@ -202,16 +204,20 @@ export default function Page() {
     const account = address || wallet || (await connectWallet());
     if (!account) throw new Error('Connect a wallet first');
     if (!window.ethereum) throw new Error('Browser wallet is unavailable');
+
     const client = createClient({
       chain: studionet,
       account: account as `0x${string}`,
       provider: window.ethereum as never,
     });
+
     await client.connect('studionet');
+
     const chainId = String(await window.ethereum.request({ method: 'eth_chainId' })).toLowerCase();
     if (chainId !== STUDIONET_CHAIN_ID) {
       throw new Error(`Wallet is on chain ${chainId}; FuseLayer is using Studionet (${STUDIONET_CHAIN_ID}).`);
     }
+
     return { client, account };
   }
 
@@ -227,6 +233,7 @@ export default function Page() {
           functionName: 'get_protocol',
           args: [id.toString()],
         })) as { id?: string; target_address?: string; owner?: string; name?: string; profile?: string };
+
         if (protocol?.target_address?.toLowerCase() === target.toLowerCase()) return protocol;
       } catch {
         // Protocol ids are sequential, but ignore a stale read and keep scanning.
@@ -238,6 +245,7 @@ export default function Page() {
   async function refreshVaultState(addressOverride?: string) {
     setVaultLoading(true);
     setVaultStatusMessage('');
+
     try {
       const client = publicClient();
       let address = (addressOverride ?? targetAddress).trim();
@@ -248,6 +256,7 @@ export default function Page() {
           functionName: 'get_protocol',
           args: [reportProtocolId.trim()],
         })) as { target_address?: string };
+
         if (typeof protocol?.target_address === 'string' && ADDRESS_RE.test(protocol.target_address)) {
           address = protocol.target_address;
           setTargetAddress(address);
@@ -269,6 +278,7 @@ export default function Page() {
         last_reference?: string;
         guardian?: string;
       };
+
       const canWithdraw10 = (await client.readContract({
         address: address as `0x${string}`,
         functionName: 'can_withdraw',
@@ -283,6 +293,7 @@ export default function Page() {
         guardian: rawState.guardian ?? '—',
         canWithdraw10: Boolean(canWithdraw10),
       });
+
       setVaultStatusMessage(`Live state read from ${address.slice(0, 6)}…${address.slice(-4)}.`);
     } catch (error) {
       setVaultStatusMessage(errorMessage(error, 'Could not read DemoVault state'));
@@ -294,18 +305,22 @@ export default function Page() {
   async function registerProtocol() {
     const cleanName = protocolName.trim();
     const cleanTarget = targetAddress.trim();
+
     if (!contractAddress) {
       setWalletError('NEXT_PUBLIC_FUSELAYER_CONTRACT_ADDRESS is not configured.');
       return;
     }
+
     if (!ADDRESS_RE.test(contractAddress)) {
       setWalletError('The configured FuseLayer address is not a valid 0x address. Check the Vercel environment variable.');
       return;
     }
+
     if (cleanName.length < 3) {
       setWalletError('Protocol name must be at least 3 characters.');
       return;
     }
+
     if (!ADDRESS_RE.test(cleanTarget)) {
       setWalletError('Protected contract address must be a 0x address with 40 hexadecimal characters.');
       return;
@@ -314,9 +329,11 @@ export default function Page() {
     setRegistering(true);
     setWalletError('');
     setProtocolId('');
+
     try {
       const { client: writeClient, account } = await liveClient();
       const readClient = publicClient();
+
       let beforeCounts: { protocols?: number | bigint | string };
       try {
         beforeCounts = (await readClient.readContract({
@@ -330,6 +347,7 @@ export default function Page() {
 
       const before = countValue(beforeCounts.protocols);
       const existing = await findProtocolByTarget(readClient, cleanTarget, before);
+
       if (existing?.id) {
         setProtocolId(`Protocol ID ${existing.id} (already registered)`);
         setReportProtocolId(existing.id);
@@ -345,6 +363,7 @@ export default function Page() {
         args: [cleanName, cleanTarget, profile],
         value: BigInt(0),
       });
+
       const receipt = await writeClient.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
@@ -364,12 +383,15 @@ export default function Page() {
           functionName: 'get_counts',
           args: [],
         })) as { protocols?: number | bigint | string };
+
         const after = countValue(afterCounts.protocols);
         const protocol = await findProtocolByTarget(readClient, cleanTarget, after);
+
         if (protocol?.id && protocol.owner?.toLowerCase() === account.toLowerCase()) {
           createdId = protocol.id;
           break;
         }
+
         if (attempt < 11) await new Promise((resolve) => setTimeout(resolve, 2500));
       }
 
@@ -393,15 +415,19 @@ export default function Page() {
       setReportMessage('Contract address is not configured.');
       return;
     }
+
     setReporting(true);
     setReportMessage('');
+
     try {
       const { client, account } = await liveClient();
+
       const beforeCounts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
         args: [],
       })) as { incidents?: number | bigint | string };
+
       const before = countValue(beforeCounts.incidents);
 
       const tx = await client.writeContract({
@@ -410,6 +436,7 @@ export default function Page() {
         args: [reportProtocolId.trim(), claim.trim(), JSON.stringify(evidence)],
         value: BigInt(0),
       });
+
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
@@ -422,16 +449,19 @@ export default function Page() {
         functionName: 'get_counts',
         args: [],
       })) as { incidents?: number | bigint | string };
+
       const after = countValue(afterCounts.incidents);
 
       let createdId = '';
       const scanEnd = after < before + 25n ? after : before + 25n;
+
       for (let id = before + 1n; id <= scanEnd; id += 1n) {
         const incident = (await client.readContract({
           address: contractAddress as `0x${string}`,
           functionName: 'get_incident',
           args: [id.toString()],
         })) as { protocol_id?: string; reporter?: string };
+
         if (
           incident?.protocol_id === reportProtocolId.trim() &&
           incident?.reporter?.toLowerCase() === account.toLowerCase()
@@ -456,22 +486,27 @@ export default function Page() {
 
   async function evaluateLatestIncident() {
     if (!contractAddress || !latestIncidentId) return;
+
     setEvaluating(true);
     setReportMessage('');
+
     try {
       const { client } = await liveClient();
+
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'evaluate_incident',
         args: [latestIncidentId],
         value: BigInt(0),
       });
+
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
         interval: 5000,
         retries: 120,
       });
+
       const incident = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_incident',
@@ -485,7 +520,9 @@ export default function Page() {
       setReportMessage(
         `Incident ${latestIncidentId}: ${incident.status} · ${incident.severity ?? ''} · ${incident.component ?? ''} · action ${incident.action ?? ''}`
       );
+
       const actionLevel = Number((incident as { action_level?: number | string }).action_level ?? 0);
+
       if (actionLevel > 0) {
         setRecoveryIncidentId(latestIncidentId);
         setVaultPendingNote(
@@ -494,6 +531,7 @@ export default function Page() {
       } else {
         setVaultPendingNote('No containment change was scheduled for this incident.');
       }
+
       await refreshVaultState();
     } catch (error) {
       setReportMessage(errorMessage(error, 'Incident evaluation failed'));
@@ -505,18 +543,22 @@ export default function Page() {
   async function requestRecovery() {
     const cleanIncidentId = recoveryIncidentId.trim();
     const cleanFix = fixSummary.trim();
+
     if (!contractAddress) {
       setRecoveryMessage('Contract address is not configured.');
       return;
     }
+
     if (!cleanIncidentId) {
       setRecoveryMessage('Enter the incident ID that currently caused containment.');
       return;
     }
+
     if (cleanFix.length < 20) {
       setRecoveryMessage('Fix summary must be at least 20 characters.');
       return;
     }
+
     if (recoveryEvidence.length < 1) {
       setRecoveryMessage('Add at least one recovery evidence URL.');
       return;
@@ -526,13 +568,16 @@ export default function Page() {
     setRecoveryMessage('');
     setLatestRecoveryId('');
     setRecoveryResult(null);
+
     try {
       const { client, account } = await liveClient();
+
       const beforeCounts = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_counts',
         args: [],
       })) as { recoveries?: number | bigint | string };
+
       const before = countValue(beforeCounts.recoveries);
 
       const tx = await client.writeContract({
@@ -541,6 +586,7 @@ export default function Page() {
         args: [cleanIncidentId, cleanFix, JSON.stringify(recoveryEvidence)],
         value: BigInt(0),
       });
+
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
@@ -553,11 +599,13 @@ export default function Page() {
         functionName: 'get_counts',
         args: [],
       })) as { recoveries?: number | bigint | string };
+
       const after = countValue(afterCounts.recoveries);
 
       let createdId = '';
       let createdRecovery: { status?: string; target_level?: number | string; target_action?: string } | null = null;
       const scanEnd = after < before + 25n ? after : before + 25n;
+
       for (let id = before + 1n; id <= scanEnd; id += 1n) {
         const recovery = (await client.readContract({
           address: contractAddress as `0x${string}`,
@@ -570,6 +618,7 @@ export default function Page() {
           target_level?: number | string;
           target_action?: string;
         };
+
         if (
           recovery?.incident_id === cleanIncidentId &&
           recovery?.requester?.toLowerCase() === account.toLowerCase()
@@ -597,23 +646,28 @@ export default function Page() {
 
   async function evaluateLatestRecovery() {
     if (!contractAddress || !latestRecoveryId) return;
+
     setEvaluatingRecovery(true);
     setRecoveryMessage('');
     setRecoveryResult(null);
+
     try {
       const { client } = await liveClient();
+
       const tx = await client.writeContract({
         address: contractAddress as `0x${string}`,
         functionName: 'evaluate_recovery',
         args: [latestRecoveryId],
         value: BigInt(0),
       });
+
       const receipt = await client.waitForTransactionReceipt({
         hash: tx,
         status: TransactionStatus.ACCEPTED,
         interval: 5000,
         retries: 120,
       });
+
       const recovery = (await client.readContract({
         address: contractAddress as `0x${string}`,
         functionName: 'get_recovery',
@@ -631,15 +685,18 @@ export default function Page() {
 
       const targetLevel = Number(recovery.target_level ?? 0);
       const targetAction = recovery.target_action ?? 'NONE';
+
       setRecoveryResult({
         status: recovery.status,
         targetLevel,
         targetAction,
         summary: recovery.summary ?? '',
       });
+
       setRecoveryMessage(
         `Recovery ${latestRecoveryId}: ${recovery.status} · target level ${targetLevel} (${targetAction})`
       );
+
       if (recovery.status === 'RESTORE_SCHEDULED') {
         setVaultPendingNote(
           `FuseLayer scheduled recovery to ${targetAction}. DemoVault applies that change after finalization; refresh the live state to confirm when it lands.`
@@ -647,6 +704,7 @@ export default function Page() {
       } else {
         setVaultPendingNote(`Recovery ${latestRecoveryId} did not schedule a DemoVault state change.`);
       }
+
       await refreshVaultState();
     } catch (error) {
       setRecoveryMessage(errorMessage(error, 'Recovery evaluation failed'));
@@ -662,6 +720,7 @@ export default function Page() {
           <strong>FuseLayer</strong>
           <span className="headerNote">incident containment for GenLayer contracts</span>
         </div>
+
         <div className="walletArea">
           {wallet ? (
             <>
@@ -678,8 +737,11 @@ export default function Page() {
         <section className="intro">
           <h1>FuseLayer</h1>
           <p>
-            Register a contract with a response profile, then submit incident evidence.
-            FuseLayer can restrict one area, isolate a component, or halt the whole target when necessary.
+            FuseLayer protects smart contracts when a security incident happens. A contract first opts in
+            by setting FuseLayer as its guardian and registering here. After that, anyone can report a
+            suspected incident with public evidence. GenLayer evaluates the evidence, and FuseLayer can
+            restrict risky operations, isolate the affected component, or halt the whole target when needed.
+            Recovery is verified step by step before protection is removed.
           </p>
         </section>
 
@@ -742,10 +804,44 @@ export default function Page() {
           <div className="formsGrid">
             <form className="formCard" onSubmit={(e) => { e.preventDefault(); registerProtocol(); }}>
               <div className="stepTitle"><span>1</span><h3>Register contract</h3></div>
+
               <div className="stepInfo">
-                <p><strong>Who:</strong> only a wallet explicitly authorized by the target contract. In DemoVault, the vault owner calls <code>authorize_registration(wallet)</code> first.</p>
-                <p><strong>What happens:</strong> FuseLayer verifies the target recognizes this FuseLayer as guardian, verifies the wallet authorization, and rejects duplicate target registrations.</p>
-                <p><strong>Output:</strong> a Protocol ID. The registering wallet becomes the FuseLayer protocol owner and is the only wallet allowed to request recovery later.</p>
+                <p>
+                  <strong>Before registering:</strong> first deploy the smart contract you want to protect
+                  with this FuseLayer contract set as its guardian. Then authorize the wallet you will use
+                  on this page. In the included DemoVault example, the owner does this by calling{' '}
+                  <code>authorize_registration(wallet)</code>.
+                </p>
+                <p>
+                  <strong>FuseLayer guardian address:</strong>{' '}
+                  <code style={{ overflowWrap: 'anywhere' }}>
+                    {contractAddress || 'FuseLayer address is not configured'}
+                  </code>
+                </p>
+                <p>
+                  <strong>Need an example?</strong>{' '}
+                  <a
+                    href="https://github.com/rohollah12/FuseLayer/blob/main/contracts/demo_vault.py"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View the DemoVault contract on GitHub
+                  </a>
+                  . It shows the guardian and wallet-authorization interface expected by FuseLayer.
+                </p>
+                <p>
+                  <strong>What goes in the field below:</strong> the deployed address of the contract you
+                  want FuseLayer to protect — <strong>not</strong> the FuseLayer guardian address above.
+                </p>
+                <p>
+                  <strong>What happens:</strong> FuseLayer verifies that the target recognizes this FuseLayer
+                  as guardian, verifies your wallet authorization, and rejects duplicate registrations.
+                </p>
+                <p>
+                  <strong>Output:</strong> a Protocol ID. Keep it for reporting incidents. The registering
+                  wallet becomes the FuseLayer protocol owner and is the only wallet allowed to request
+                  recovery later.
+                </p>
               </div>
 
               <label htmlFor="protocol-name">Protocol name</label>
@@ -764,6 +860,10 @@ export default function Page() {
                 placeholder="0x…"
                 spellCheck={false}
               />
+              <p className="help">
+                Enter the address of your deployed protected contract. It must already have this FuseLayer
+                configured as guardian and must authorize your wallet for registration.
+              </p>
 
               <label htmlFor="live-profile">Response profile</label>
               <select id="live-profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
@@ -783,10 +883,22 @@ export default function Page() {
 
             <form className="formCard" onSubmit={(e) => { e.preventDefault(); reportIncident(); }}>
               <div className="stepTitle"><span>2</span><h3>Report and evaluate incident</h3></div>
+
               <div className="stepInfo">
-                <p><strong>Who can report:</strong> anyone. A researcher, user, monitor, or protocol team can submit evidence.</p>
-                <p><strong>Who can evaluate:</strong> anyone. Evaluation asks GenLayer validators to classify the incident, then FuseLayer deterministically maps that result to NONE, RESTRICT, ISOLATE, or HALT.</p>
-                <p><strong>Output:</strong> reporting returns an Incident ID. Evaluation returns the stored status, severity, affected component, scope, and containment action. Target containment is sent after finalization.</p>
+                <p>
+                  <strong>What to enter:</strong> use the Protocol ID from step 1, describe the suspected
+                  problem, and add 1–3 public evidence links.
+                </p>
+                <p>
+                  <strong>Who can use it:</strong> anyone can report an incident and anyone can trigger its
+                  evaluation. GenLayer checks the evidence, then FuseLayer deterministically maps the result
+                  to NONE, RESTRICT, ISOLATE, or HALT.
+                </p>
+                <p>
+                  <strong>Output:</strong> reporting returns an Incident ID. Evaluation records the severity,
+                  affected component, scope, and containment action. If containment is required, the protected
+                  contract is updated after finalization.
+                </p>
               </div>
 
               <label htmlFor="protocol-id">Protocol ID</label>
@@ -845,10 +957,13 @@ export default function Page() {
             </div>
 
             {vaultPendingNote && <div className="message info vaultPending">{vaultPendingNote}</div>}
+
             {!vaultState && !vaultStatusMessage && (
               <p className="quiet">Register a DemoVault, or enter an existing Protocol ID, then refresh to read its current safety state.</p>
             )}
+
             {vaultStatusMessage && <p className="vaultReadNote">{vaultStatusMessage}</p>}
+
             {vaultState && (
               <dl className="vaultStateGrid">
                 <ResultRow label="Level" value={String(vaultState.level)} />
@@ -863,10 +978,21 @@ export default function Page() {
 
           <form className="formCard recoveryCard" onSubmit={(e) => { e.preventDefault(); requestRecovery(); }}>
             <div className="stepTitle"><span>3</span><h3>Request and evaluate recovery</h3></div>
+
             <div className="stepInfo stepInfoWide">
-              <p><strong>Who can request:</strong> only the protocol owner from step 1. The protocol must currently be contained, and the request must reference the incident that caused the current containment.</p>
-              <p><strong>Who can evaluate:</strong> anyone. GenLayer checks whether the original issue was actually addressed and whether it is safe to restore service.</p>
-              <p><strong>Output:</strong> the request returns a Recovery ID. If verification succeeds, containment drops by exactly one level — HALT → ISOLATE → RESTRICT → NONE. Weak evidence can return NO_CHANGE instead.</p>
+              <p>
+                <strong>When to use it:</strong> after the problem has been fixed, the protocol owner uses
+                the incident that caused the current containment, describes the fix, and adds recovery evidence.
+              </p>
+              <p>
+                <strong>Who can evaluate:</strong> anyone. GenLayer checks whether the original issue was
+                actually resolved and whether it is safe to restore service.
+              </p>
+              <p>
+                <strong>Output:</strong> the request returns a Recovery ID. If verification succeeds,
+                containment drops by exactly one level — HALT → ISOLATE → RESTRICT → NONE. If the evidence
+                is not strong enough, the safety level stays unchanged.
+              </p>
             </div>
 
             <div className="recoveryFields">
@@ -879,6 +1005,7 @@ export default function Page() {
                   placeholder="1"
                 />
               </div>
+
               <div>
                 <label htmlFor="fix-summary">What was fixed?</label>
                 <textarea
@@ -888,6 +1015,7 @@ export default function Page() {
                   rows={4}
                 />
               </div>
+
               <div>
                 <label htmlFor="recovery-evidence">Recovery evidence URLs <span className="optional">(1–3, one per line)</span></label>
                 <textarea
@@ -905,6 +1033,7 @@ export default function Page() {
               <button className="button buttonPrimary" type="submit" disabled={requestingRecovery}>
                 {requestingRecovery ? 'Requesting…' : 'Request recovery'}
               </button>
+
               {latestRecoveryId && (
                 <button
                   className="button"
@@ -918,6 +1047,7 @@ export default function Page() {
             </div>
 
             {recoveryMessage && <div className="message info"><strong>Recovery output:</strong> {recoveryMessage}</div>}
+
             {recoveryResult && (
               <dl className="recoveryResult">
                 <ResultRow label="Status" value={recoveryResult.status} />
