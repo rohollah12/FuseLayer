@@ -6,7 +6,8 @@
 >
 > The Agent Tank submission and web app remain on the original stable Studionet deployment (**61999**). The 61997 contracts are compatibility-only and are kept separately in [`contracts/compat_61997/`](contracts/compat_61997/README.md).
 
-Demo video
+## Demo video
+
 https://www.youtube.com/watch?v=Fg0wGgDcqQ8
 The video shows the complete application flow: protocol registration, incident reporting and evaluation, live containment, and staged recovery.
 
