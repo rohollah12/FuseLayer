@@ -6,6 +6,10 @@
 >
 > The Agent Tank submission and web app remain on the original stable Studionet deployment (**61999**). The 61997 contracts are compatibility-only and are kept separately in [`contracts/compat_61997/`](contracts/compat_61997/README.md).
 
+Demo video
+https://www.youtube.com/watch?v=Fg0wGgDcqQ8
+The video shows the complete application flow: protocol registration, incident reporting and evaluation, live containment, and staged recovery.
+
 FuseLayer is a GenLayer controller for incident containment. A protocol registers a target contract and picks a safety profile. If an incident is reported, GenLayer checks the public evidence and agrees on five things: whether the incident is confirmed, whether it is still active, its severity, the affected component, and whether the impact is local or protocol-wide.
 FuseLayer does not let the model choose the action directly. The agreed result is passed through a fixed policy that returns one of these levels:
 
